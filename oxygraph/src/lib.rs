@@ -106,13 +106,18 @@ impl BipartiteGraph {
     }
 
     /// Make an SVG Plot of a bipartite graph.
-    ///
-    /// TODO:
-    /// Make host nodes bigger if they have more connections.
     pub fn plot(&self, width: i32, height: i32) {
         let graph = &self.0;
+
+        // some consts and fns
+        // scale the nodes across the bipartite layers
         const NODE_SCALE: f64 = 4.0;
+        // the margins for the graph
         const MARGIN_LR: f64 = 20.0;
+        // scale a number between zero and 1, given a min/max
+        fn scale_fit(x: f64, min_x: f64, max_x: f64) -> f64 {
+            ((1.0 - 0.1) * ((x - min_x) / (max_x - min_x))) + 0.1
+        }
 
         // store the parasites and hosts in their own vecs.
         let mut hosts = Vec::new();
@@ -159,6 +164,20 @@ impl BipartiteGraph {
             );
         }
 
+        // host nodes here
+        // scaling the nodes by how many incoming connections they have.
+        let mut incoming_nodes_vec = Vec::new();
+        for (node, _) in hosts.iter() {
+            let out: Vec<NodeIndex> = graph.neighbors_directed(*node, Outgoing).collect();
+
+            if out.len() > 0 {
+                continue;
+            } else {
+                let r_vec: Vec<NodeIndex> = graph.neighbors_directed(*node, Incoming).collect();
+                incoming_nodes_vec.push(r_vec.len());
+            }
+        }
+
         let mut host_nodes = String::new();
         let mut host_pos = HashMap::new();
 
@@ -178,7 +197,11 @@ impl BipartiteGraph {
                 "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"red\"><title>{}</title></circle>\n{}",
                 x,
                 y,
-                r * 2,
+                scale_fit(
+                    r as f64,
+                    *incoming_nodes_vec.iter().min().unwrap() as f64,
+                    *incoming_nodes_vec.iter().max().unwrap() as f64
+                ) * 5.0,
                 spp_name,
                 if i >= 1 { "\t" } else { "" }
             );
@@ -202,10 +225,6 @@ impl BipartiteGraph {
             .iter()
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap();
-
-        fn scale_fit(x: f64, min_x: f64, max_x: f64) -> f64 {
-            ((1.0 - 0.0) * ((x - min_x) / max_x - min_x)) + 0.0
-        }
 
         // now draw the edges
         for (mut i, edge) in graph.edge_references().enumerate() {
