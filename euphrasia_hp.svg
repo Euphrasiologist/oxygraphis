@@ -1,0 +1,186 @@
+<svg version="1.1"
+    width="420" height="200"
+    xmlns="http://www.w3.org/2000/svg">
+    <line x1="352.5" y1="50" x2="341.7741935483871" y2="150" stroke="black" stroke-width="1"/>
+	<line x1="352.5" y1="50" x2="396.93548387096774" y2="150" stroke="black" stroke-width="0.784"/>
+	<line x1="352.5" y1="50" x2="249.83870967741936" y2="150" stroke="black" stroke-width="0.7973333333333333"/>
+	<line x1="352.5" y1="50" x2="84.35483870967742" y2="150" stroke="black" stroke-width="0.8533333333333334"/>
+	<line x1="352.5" y1="50" x2="170.16129032258064" y2="150" stroke="black" stroke-width="1"/>
+	<line x1="352.5" y1="50" x2="35.32258064516129" y2="150" stroke="black" stroke-width="0.8533333333333334"/>
+	<line x1="352.5" y1="50" x2="127.25806451612902" y2="150" stroke="black" stroke-width="0.5946666666666667"/>
+	<line x1="352.5" y1="50" x2="280.48387096774195" y2="150" stroke="black" stroke-width="0.35733333333333334"/>
+	<line x1="352.5" y1="50" x2="329.51612903225805" y2="150" stroke="black" stroke-width="0.8613333333333333"/>
+	<line x1="352.5" y1="50" x2="274.35483870967744" y2="150" stroke="black" stroke-width="0.36533333333333334"/>
+	<line x1="352.5" y1="50" x2="139.51612903225805" y2="150" stroke="black" stroke-width="0.5653333333333334"/>
+	<line x1="352.5" y1="50" x2="72.09677419354838" y2="150" stroke="black" stroke-width="0.024"/>
+	<line x1="352.5" y1="50" x2="286.61290322580646" y2="150" stroke="black" stroke-width="0.32"/>
+	<line x1="352.5" y1="50" x2="133.38709677419354" y2="150" stroke="black" stroke-width="0.19466666666666665"/>
+	<line x1="352.5" y1="50" x2="347.9032258064516" y2="150" stroke="black" stroke-width="0.04"/>
+	<line x1="352.5" y1="50" x2="59.83870967741935" y2="150" stroke="black" stroke-width="0.376"/>
+	<line x1="352.5" y1="50" x2="352.5" y2="50" stroke="black" stroke-width="0.328"/>
+	<line x1="352.5" y1="50" x2="352.5" y2="50" stroke="black" stroke-width="0.7733333333333333"/>
+	<line x1="352.5" y1="50" x2="213.06451612903226" y2="150" stroke="black" stroke-width="0.08533333333333333"/>
+	<line x1="352.5" y1="50" x2="237.5806451612903" y2="150" stroke="black" stroke-width="0.13333333333333333"/>
+	<line x1="352.5" y1="50" x2="298.8709677419355" y2="150" stroke="black" stroke-width="0.8933333333333333"/>
+	<line x1="352.5" y1="50" x2="354.0322580645161" y2="150" stroke="black" stroke-width="0.21066666666666667"/>
+	<line x1="352.5" y1="50" x2="262.0967741935484" y2="150" stroke="black" stroke-width="0.7066666666666667"/>
+	<line x1="352.5" y1="50" x2="378.5483870967742" y2="150" stroke="black" stroke-width="0.13866666666666666"/>
+	<line x1="352.5" y1="50" x2="372.4193548387097" y2="150" stroke="black" stroke-width="0.09066666666666667"/>
+	<line x1="352.5" y1="50" x2="200.80645161290323" y2="150" stroke="black" stroke-width="0.17333333333333334"/>
+	<line x1="352.5" y1="50" x2="206.93548387096774" y2="150" stroke="black" stroke-width="0.19466666666666665"/>
+	<line x1="352.5" y1="50" x2="151.7741935483871" y2="150" stroke="black" stroke-width="0.8053333333333333"/>
+	<line x1="352.5" y1="50" x2="366.2903225806452" y2="150" stroke="black" stroke-width="0.11733333333333333"/>
+	<line x1="352.5" y1="50" x2="78.2258064516129" y2="150" stroke="black" stroke-width="0.02666666666666667"/>
+	<line x1="352.5" y1="50" x2="164.03225806451613" y2="150" stroke="black" stroke-width="0.14933333333333335"/>
+	<line x1="352.5" y1="50" x2="41.45161290322581" y2="150" stroke="black" stroke-width="0.058666666666666666"/>
+	<line x1="257.5" y1="50" x2="151.7741935483871" y2="150" stroke="black" stroke-width="0.07"/>
+	<line x1="257.5" y1="50" x2="335.64516129032256" y2="150" stroke="black" stroke-width="0.7233333333333333"/>
+	<line x1="257.5" y1="50" x2="396.93548387096774" y2="150" stroke="black" stroke-width="0.74"/>
+	<line x1="257.5" y1="50" x2="249.83870967741936" y2="150" stroke="black" stroke-width="0.6933333333333334"/>
+	<line x1="257.5" y1="50" x2="84.35483870967742" y2="150" stroke="black" stroke-width="0.6466666666666666"/>
+	<line x1="257.5" y1="50" x2="170.16129032258064" y2="150" stroke="black" stroke-width="0.5933333333333334"/>
+	<line x1="257.5" y1="50" x2="35.32258064516129" y2="150" stroke="black" stroke-width="0.5433333333333333"/>
+	<line x1="257.5" y1="50" x2="127.25806451612902" y2="150" stroke="black" stroke-width="0.4811594202898553"/>
+	<line x1="257.5" y1="50" x2="280.48387096774195" y2="150" stroke="black" stroke-width="0.16825396825396802"/>
+	<line x1="257.5" y1="50" x2="329.51612903225805" y2="150" stroke="black" stroke-width="0.4603174603174607"/>
+	<line x1="257.5" y1="50" x2="274.35483870967744" y2="150" stroke="black" stroke-width="0.42898550724637663"/>
+	<line x1="257.5" y1="50" x2="139.51612903225805" y2="150" stroke="black" stroke-width="0.4555555555555554"/>
+	<line x1="257.5" y1="50" x2="72.09677419354838" y2="150" stroke="black" stroke-width="0.008"/>
+	<line x1="257.5" y1="50" x2="90.48387096774194" y2="150" stroke="black" stroke-width="0.008"/>
+	<line x1="257.5" y1="50" x2="133.38709677419354" y2="150" stroke="black" stroke-width="0.018666666666666668"/>
+	<line x1="257.5" y1="50" x2="347.9032258064516" y2="150" stroke="black" stroke-width="0"/>
+	<line x1="257.5" y1="50" x2="59.83870967741935" y2="150" stroke="black" stroke-width="0.021333333333333333"/>
+	<line x1="257.5" y1="50" x2="257.5" y2="50" stroke="black" stroke-width="0.23030303030303"/>
+	<line x1="257.5" y1="50" x2="257.5" y2="50" stroke="black" stroke-width="0.024"/>
+	<line x1="257.5" y1="50" x2="213.06451612903226" y2="150" stroke="black" stroke-width="0.008"/>
+	<line x1="257.5" y1="50" x2="237.5806451612903" y2="150" stroke="black" stroke-width="0.072222222222222"/>
+	<line x1="257.5" y1="50" x2="298.8709677419355" y2="150" stroke="black" stroke-width="0.4363636363636367"/>
+	<line x1="257.5" y1="50" x2="354.0322580645161" y2="150" stroke="black" stroke-width="0.17391304347826067"/>
+	<line x1="257.5" y1="50" x2="262.0967741935484" y2="150" stroke="black" stroke-width="0.04"/>
+	<line x1="257.5" y1="50" x2="378.5483870967742" y2="150" stroke="black" stroke-width="0.16388888888888867"/>
+	<line x1="257.5" y1="50" x2="200.80645161290323" y2="150" stroke="black" stroke-width="0.27222222222222203"/>
+	<line x1="257.5" y1="50" x2="206.93548387096774" y2="150" stroke="black" stroke-width="0.018666666666666668"/>
+	<line x1="257.5" y1="50" x2="23.064516129032256" y2="150" stroke="black" stroke-width="0.04"/>
+	<line x1="257.5" y1="50" x2="384.6774193548387" y2="150" stroke="black" stroke-width="0.12266666666666667"/>
+	<line x1="67.5" y1="50" x2="311.1290322580645" y2="150" stroke="black" stroke-width="0.032"/>
+	<line x1="67.5" y1="50" x2="67.5" y2="50" stroke="black" stroke-width="0.21866666666666665"/>
+	<line x1="67.5" y1="50" x2="231.4516129032258" y2="150" stroke="black" stroke-width="0.058666666666666666"/>
+	<line x1="67.5" y1="50" x2="41.45161290322581" y2="150" stroke="black" stroke-width="0.07466666666666667"/>
+	<line x1="67.5" y1="50" x2="274.35483870967744" y2="150" stroke="black" stroke-width="0.9920000000000001"/>
+	<line x1="67.5" y1="50" x2="194.67741935483872" y2="150" stroke="black" stroke-width="0.032"/>
+	<line x1="67.5" y1="50" x2="200.80645161290323" y2="150" stroke="black" stroke-width="0.8480000000000001"/>
+	<line x1="67.5" y1="50" x2="170.16129032258064" y2="150" stroke="black" stroke-width="0.9306666666666668"/>
+	<line x1="67.5" y1="50" x2="396.93548387096774" y2="150" stroke="black" stroke-width="0.13333333333333333"/>
+	<line x1="67.5" y1="50" x2="127.25806451612902" y2="150" stroke="black" stroke-width="0.5066666666666666"/>
+	<line x1="67.5" y1="50" x2="225.32258064516128" y2="150" stroke="black" stroke-width="0.032"/>
+	<line x1="67.5" y1="50" x2="176.29032258064515" y2="150" stroke="black" stroke-width="0.032"/>
+	<line x1="67.5" y1="50" x2="65.96774193548387" y2="150" stroke="black" stroke-width="0.392"/>
+	<line x1="67.5" y1="50" x2="249.83870967741936" y2="150" stroke="black" stroke-width="0.33066666666666666"/>
+	<line x1="67.5" y1="50" x2="298.8709677419355" y2="150" stroke="black" stroke-width="0.8320000000000001"/>
+	<line x1="67.5" y1="50" x2="84.35483870967742" y2="150" stroke="black" stroke-width="0.336"/>
+	<line x1="67.5" y1="50" x2="108.87096774193549" y2="150" stroke="black" stroke-width="0.02666666666666667"/>
+	<line x1="67.5" y1="50" x2="29.193548387096776" y2="150" stroke="black" stroke-width="0.02666666666666667"/>
+	<line x1="67.5" y1="50" x2="59.83870967741935" y2="150" stroke="black" stroke-width="0.8133333333333332"/>
+	<line x1="67.5" y1="50" x2="121.12903225806451" y2="150" stroke="black" stroke-width="0.128"/>
+	<line x1="67.5" y1="50" x2="372.4193548387097" y2="150" stroke="black" stroke-width="0.14400000000000002"/>
+	<line x1="67.5" y1="50" x2="378.5483870967742" y2="150" stroke="black" stroke-width="0.6053333333333334"/>
+	<line x1="67.5" y1="50" x2="35.32258064516129" y2="150" stroke="black" stroke-width="1"/>
+	<line x1="67.5" y1="50" x2="255.96774193548387" y2="150" stroke="black" stroke-width="0.18133333333333335"/>
+	<line x1="67.5" y1="50" x2="390.80645161290323" y2="150" stroke="black" stroke-width="0.10133333333333333"/>
+	<line x1="67.5" y1="50" x2="305" y2="150" stroke="black" stroke-width="0.09866666666666667"/>
+	<line x1="67.5" y1="50" x2="243.70967741935482" y2="150" stroke="black" stroke-width="0.08800000000000001"/>
+	<line x1="67.5" y1="50" x2="317.258064516129" y2="150" stroke="black" stroke-width="0.12266666666666667"/>
+	<line x1="67.5" y1="50" x2="102.74193548387096" y2="150" stroke="black" stroke-width="0.048"/>
+	<line x1="67.5" y1="50" x2="360.1612903225806" y2="150" stroke="black" stroke-width="0.14133333333333334"/>
+	<line x1="67.5" y1="50" x2="182.41935483870967" y2="150" stroke="black" stroke-width="0.06933333333333333"/>
+	<line x1="67.5" y1="50" x2="219.19354838709677" y2="150" stroke="black" stroke-width="0.048"/>
+	<line x1="67.5" y1="50" x2="323.38709677419354" y2="150" stroke="black" stroke-width="0.04"/>
+	<line x1="67.5" y1="50" x2="213.06451612903226" y2="150" stroke="black" stroke-width="0.09333333333333332"/>
+	<line x1="67.5" y1="50" x2="292.741935483871" y2="150" stroke="black" stroke-width="0.016"/>
+	<line x1="67.5" y1="50" x2="96.61290322580645" y2="150" stroke="black" stroke-width="0.016"/>
+	<line x1="162.5" y1="50" x2="162.5" y2="50" stroke="black" stroke-width="0.7111111111111134"/>
+	<line x1="162.5" y1="50" x2="53.70967741935484" y2="150" stroke="black" stroke-width="0.102222222222222"/>
+	<line x1="162.5" y1="50" x2="72.09677419354838" y2="150" stroke="black" stroke-width="0.7555555555555533"/>
+	<line x1="162.5" y1="50" x2="35.32258064516129" y2="150" stroke="black" stroke-width="0.74222222222222"/>
+	<line x1="162.5" y1="50" x2="164.03225806451613" y2="150" stroke="black" stroke-width="0.6844444444444466"/>
+	<line x1="162.5" y1="50" x2="188.54838709677418" y2="150" stroke="black" stroke-width="0.3155555555555553"/>
+	<line x1="162.5" y1="50" x2="157.90322580645162" y2="150" stroke="black" stroke-width="0.3911111111111113"/>
+	<line x1="162.5" y1="50" x2="145.64516129032256" y2="150" stroke="black" stroke-width="0.02666666666666667"/>
+	<line x1="162.5" y1="50" x2="286.61290322580646" y2="150" stroke="black" stroke-width="0.12444444444444466"/>
+	<line x1="162.5" y1="50" x2="59.83870967741935" y2="150" stroke="black" stroke-width="0.09777777777777799"/>
+	<line x1="162.5" y1="50" x2="213.06451612903226" y2="150" stroke="black" stroke-width="0.24888888888888866"/>
+	<line x1="162.5" y1="50" x2="115" y2="150" stroke="black" stroke-width="0.04444444444444447"/>
+	<line x1="162.5" y1="50" x2="268.2258064516129" y2="150" stroke="black" stroke-width="0.08444444444444467"/>
+	<line x1="162.5" y1="50" x2="47.58064516129032" y2="150" stroke="black" stroke-width="0.05333333333333334"/>
+	<line x1="162.5" y1="50" x2="133.38709677419354" y2="150" stroke="black" stroke-width="0.17333333333333334"/>
+	
+    <circle cx="67.5" cy="50" r="6" fill="green"><title>Euphrasia_anglica</title></circle>
+	<circle cx="162.5" cy="50" r="6" fill="green"><title>Euphrasia_micrantha</title></circle>
+	<circle cx="257.5" cy="50" r="6" fill="green"><title>Euphrasia_tetraquetra</title></circle>
+	<circle cx="352.5" cy="50" r="6" fill="green"><title>Euphrasia_vigursii</title></circle>
+	
+    <circle cx="23.064516129032256" cy="150" r="2" fill="red"><title>Achillea_millefolium</title></circle>
+	<circle cx="29.193548387096776" cy="150" r="2" fill="red"><title>Agrimonia_eupatorium</title></circle>
+	<circle cx="35.32258064516129" cy="150" r="8" fill="red"><title>Agrostis_capillaris</title></circle>
+	<circle cx="41.45161290322581" cy="150" r="4" fill="red"><title>Agrostis_vinealis</title></circle>
+	<circle cx="47.58064516129032" cy="150" r="2" fill="red"><title>Aira_caryophyllaea</title></circle>
+	<circle cx="53.70967741935484" cy="150" r="2" fill="red"><title>Alchemilla_alpina</title></circle>
+	<circle cx="59.83870967741935" cy="150" r="8" fill="red"><title>Anthoxanthum_odoratum</title></circle>
+	<circle cx="65.96774193548387" cy="150" r="2" fill="red"><title>Arrhenatherum_elatius</title></circle>
+	<circle cx="72.09677419354838" cy="150" r="6" fill="red"><title>Calluna_vulgaris</title></circle>
+	<circle cx="78.2258064516129" cy="150" r="2" fill="red"><title>Carex_caryophyllaea</title></circle>
+	<circle cx="84.35483870967742" cy="150" r="6" fill="red"><title>Carex_flacca</title></circle>
+	<circle cx="90.48387096774194" cy="150" r="2" fill="red"><title>Centaurium_erythraea</title></circle>
+	<circle cx="96.61290322580645" cy="150" r="2" fill="red"><title>Cerastium_fontanum</title></circle>
+	<circle cx="102.74193548387096" cy="150" r="2" fill="red"><title>Cirsium_palustris</title></circle>
+	<circle cx="108.87096774193549" cy="150" r="2" fill="red"><title>Crepis_capillaris</title></circle>
+	<circle cx="115" cy="150" r="2" fill="red"><title>Cryptogramma_crispa</title></circle>
+	<circle cx="121.12903225806451" cy="150" r="2" fill="red"><title>Cynosurus_cristatus</title></circle>
+	<circle cx="127.25806451612902" cy="150" r="6" fill="red"><title>Dactylis_glomerata</title></circle>
+	<circle cx="133.38709677419354" cy="150" r="6" fill="red"><title>Danthonia_decumbens</title></circle>
+	<circle cx="139.51612903225805" cy="150" r="4" fill="red"><title>Daucus_carota</title></circle>
+	<circle cx="145.64516129032256" cy="150" r="2" fill="red"><title>Digitalis_purpurea</title></circle>
+	<circle cx="151.7741935483871" cy="150" r="4" fill="red"><title>Erica_cinerea</title></circle>
+	<circle cx="157.90322580645162" cy="150" r="2" fill="red"><title>Erica_tetralix</title></circle>
+	<circle cx="164.03225806451613" cy="150" r="4" fill="red"><title>Festuca_ovina</title></circle>
+	<circle cx="170.16129032258064" cy="150" r="6" fill="red"><title>Festuca_rubra</title></circle>
+	<circle cx="176.29032258064515" cy="150" r="2" fill="red"><title>Fragaria_vesca</title></circle>
+	<circle cx="182.41935483870967" cy="150" r="2" fill="red"><title>Galium_album</title></circle>
+	<circle cx="188.54838709677418" cy="150" r="2" fill="red"><title>Galium_saxatile</title></circle>
+	<circle cx="194.67741935483872" cy="150" r="2" fill="red"><title>Hedera_helix</title></circle>
+	<circle cx="200.80645161290323" cy="150" r="6" fill="red"><title>Holcus_lanatus</title></circle>
+	<circle cx="206.93548387096774" cy="150" r="4" fill="red"><title>Hypericum_pulchrum</title></circle>
+	<circle cx="213.06451612903226" cy="150" r="8" fill="red"><title>Hypochaeris_radicata</title></circle>
+	<circle cx="219.19354838709677" cy="150" r="2" fill="red"><title>Jacobaea_vulgaris</title></circle>
+	<circle cx="225.32258064516128" cy="150" r="2" fill="red"><title>Koeleria_macrantha</title></circle>
+	<circle cx="231.4516129032258" cy="150" r="2" fill="red"><title>Leontodon_hispidus</title></circle>
+	<circle cx="237.5806451612903" cy="150" r="4" fill="red"><title>Leontodon_saxatilis</title></circle>
+	<circle cx="243.70967741935482" cy="150" r="2" fill="red"><title>Lolium_perenne</title></circle>
+	<circle cx="249.83870967741936" cy="150" r="6" fill="red"><title>Lotus_corniculatus</title></circle>
+	<circle cx="255.96774193548387" cy="150" r="2" fill="red"><title>Luzula_campestris</title></circle>
+	<circle cx="262.0967741935484" cy="150" r="4" fill="red"><title>Pedicularis_sylvatica</title></circle>
+	<circle cx="268.2258064516129" cy="150" r="2" fill="red"><title>Pilosella_officinarum</title></circle>
+	<circle cx="274.35483870967744" cy="150" r="6" fill="red"><title>Plantago_lanceolata</title></circle>
+	<circle cx="280.48387096774195" cy="150" r="4" fill="red"><title>Plantago_maritima</title></circle>
+	<circle cx="286.61290322580646" cy="150" r="4" fill="red"><title>Polygala_vulgaris</title></circle>
+	<circle cx="292.741935483871" cy="150" r="2" fill="red"><title>Potentilla_anserina</title></circle>
+	<circle cx="298.8709677419355" cy="150" r="6" fill="red"><title>Potentilla_erecta</title></circle>
+	<circle cx="305" cy="150" r="2" fill="red"><title>Prunella_vulgaris</title></circle>
+	<circle cx="311.1290322580645" cy="150" r="2" fill="red"><title>Pteridium_aquilinum</title></circle>
+	<circle cx="317.258064516129" cy="150" r="2" fill="red"><title>Ranunculus_acris</title></circle>
+	<circle cx="323.38709677419354" cy="150" r="2" fill="red"><title>Rumex_acetosa</title></circle>
+	<circle cx="329.51612903225805" cy="150" r="4" fill="red"><title>Scilla_verna</title></circle>
+	<circle cx="335.64516129032256" cy="150" r="2" fill="red"><title>Serratula_tinctoria</title></circle>
+	<circle cx="341.7741935483871" cy="150" r="2" fill="red"><title>Serrtula_tinctoria</title></circle>
+	<circle cx="347.9032258064516" cy="150" r="4" fill="red"><title>Solidago_virguraea</title></circle>
+	<circle cx="354.0322580645161" cy="150" r="4" fill="red"><title>Succisa_pratensis</title></circle>
+	<circle cx="360.1612903225806" cy="150" r="2" fill="red"><title>Taraxacum_officinale</title></circle>
+	<circle cx="366.2903225806452" cy="150" r="2" fill="red"><title>Thymus_polytrichus</title></circle>
+	<circle cx="372.4193548387097" cy="150" r="4" fill="red"><title>Trifolium_pratense</title></circle>
+	<circle cx="378.5483870967742" cy="150" r="6" fill="red"><title>Trifolium_repens</title></circle>
+	<circle cx="384.6774193548387" cy="150" r="2" fill="red"><title>Ulex_europaeus</title></circle>
+	<circle cx="390.80645161290323" cy="150" r="2" fill="red"><title>Veronica_chamaedrys</title></circle>
+	<circle cx="396.93548387096774" cy="150" r="6" fill="red"><title>Viola_riviniana</title></circle>
+	
+</svg>
+        

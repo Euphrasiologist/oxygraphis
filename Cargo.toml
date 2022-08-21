@@ -1,0 +1,10 @@
+[package]
+name = "oxygraphis"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+clap = { version = "3.2.17", features = ["cargo"] }
+oxygraph = { path = "oxygraph" }
