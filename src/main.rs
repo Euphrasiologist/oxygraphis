@@ -4,7 +4,7 @@
 // various metrics on these graphs
 
 use clap::{arg, value_parser, Command};
-use oxygraph::BipartiteGraph;
+use oxygraph::{BipartiteGraph, InteractionMatrix};
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -29,7 +29,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let bpgraph = BipartiteGraph::from_dsv(input, b'\t')?;
 
-    bpgraph.plot(420, 200);
+    // bpgraph.plot(420, 200);
+    let mut im = InteractionMatrix::from_bipartite(bpgraph);
+    im.sort();
+    im.plot(600, 100);
 
     Ok(())
 }
