@@ -1,8 +1,3 @@
-// a binary to create a graph from
-// TSV input
-// and then we'd like to compute
-// various metrics on these graphs
-
 use clap::{arg, value_parser, Command};
 use oxygraph::{BipartiteGraph, InteractionMatrix};
 use std::error::Error;
@@ -32,7 +27,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // bpgraph.plot(420, 200);
     let mut im = InteractionMatrix::from_bipartite(bpgraph);
     im.sort();
-    im.plot(600, 100);
+    let nodf = im.nodf()?;
+    eprintln!("NODF for input = {}", nodf);
+    im.plot(600, 600);
 
     Ok(())
 }

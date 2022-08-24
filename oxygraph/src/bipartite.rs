@@ -1,15 +1,13 @@
 use csv::ReaderBuilder;
-use petgraph::visit::{EdgeRef, IntoNodeReferences, NodeRef};
-use serde_derive::Deserialize;
-use thiserror::Error;
-
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
+use petgraph::visit::{EdgeRef, IntoNodeReferences, NodeRef};
 use petgraph::Direction::{Incoming, Outgoing};
 use petgraph::Graph;
-
+use serde_derive::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use thiserror::Error;
 
 use crate::MARGIN_LR;
 

@@ -1,3 +1,6 @@
+//! `oxygraph` is a crate to aid in the analysis
+//! of ecological graphs. It's very much in development.
+
 /// A module to analyse and visualise bipartite
 /// graphs from tab delimited input data.
 pub mod bipartite;

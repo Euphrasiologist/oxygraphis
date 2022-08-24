@@ -7,6 +7,17 @@ use crate::MARGIN_LR;
 use itertools::Itertools;
 use permutation;
 use std::collections::HashSet;
+use thiserror::Error;
+
+/// An error type for the interaction matrix 
+/// struct.
+#[derive(Error, Debug)]
+pub enum InteractionMatrixError {
+    #[error("Could not transpose matrix.")]
+    TransposeError,
+    #[error("Error in NODF calculation.")]
+    NODFError,
+}
 
 /// A simple representation of a matrix
 /// for our purposes. It's a matrix
@@ -39,7 +50,9 @@ impl InteractionMatrix {
             .collect();
         let per = permutation::sort(row_sums);
         self.rownames = per.apply_slice(&self.rownames);
+        self.rownames.reverse();
         self.inner = per.apply_slice(&self.inner);
+        self.inner.reverse();
 
         // sort the columns and the column labels
         // mod from https://stackoverflow.com/questions/65458789/folding-matrix-rows-element-wise-and-computing-average-in-rust
@@ -62,9 +75,11 @@ impl InteractionMatrix {
         // now we sort each row in the inner vec
         for el in &mut self.inner {
             *el = per_cols.apply_slice(el.clone());
+            el.reverse();
         }
         // and sort the column names
         self.colnames = per_cols.apply_slice(&self.colnames);
+        self.colnames.reverse();
     }
 
     /// Make an interaction matrix from a bipartite
@@ -137,26 +152,150 @@ impl InteractionMatrix {
         println!("{}", svg);
     }
 
+    /// Transpose an interaction matrix.
+    pub fn transpose(&mut self) -> Result<Self, InteractionMatrixError> {
+        let mut matrix = self.inner.clone();
+        for inner in &mut matrix {
+            inner.reverse();
+        }
+
+        let t = (0..matrix[0].len())
+            .map(|_| {
+                matrix
+                    .iter_mut()
+                    .map(|inner| inner.pop())
+                    .collect::<Option<Vec<bool>>>()
+            })
+            .collect::<Option<Vec<Vec<bool>>>>();
+
+        let inner = match t {
+            Some(m) => m,
+            None => return Err(InteractionMatrixError::TransposeError),
+        };
+
+        Ok(Self {
+            inner,
+            rownames: self.colnames.clone(),
+            colnames: self.rownames.clone(),
+        })
+    }
+
     /// Compute the NODF of an interaction matrix
     /// Can be sorted or unsorted. If you want it to
     /// compute on a sorted matrix, call `.sort()` before
     /// this function.
-    pub fn nodf(&self) {
+    /// 
+    /// TODO: refactor this code.
+    pub fn nodf(&mut self) -> Result<f64, InteractionMatrixError> {
         // following https://nadiah.org/2021/07/16/nodf-nestedness-worked-example
         // rows first
         let mut pos_row_set_vec = Vec::new();
         for row in &self.inner {
-            let mut positions_of_ones_iter = row.iter();
-            let mut pos_row_hs = HashSet::new();
-            while let Some(pos) = positions_of_ones_iter.position(|e| *e == true) {
-                pos_row_hs.insert(pos);
-            }
+            let positions_of_ones_iter = row
+                .iter()
+                .enumerate()
+                .filter(|(_, &r)| r)
+                .map(|(index, _)| index)
+                .collect::<HashSet<_>>();
 
-            pos_row_set_vec.push(pos_row_hs);
+            pos_row_set_vec.push(positions_of_ones_iter);
         }
         // make combinations
         let comb_pos_row = pos_row_set_vec.iter().combinations(2);
 
-        // for Vec { upper, lower, .. } in comb_pos_row {}
+        // store row number paired
+        let mut np_row = Vec::new();
+        for upper_lower in comb_pos_row {
+            // these should be guaranteed subsets
+            let upper = upper_lower[0];
+            let lower = upper_lower[1];
+            if lower.len() >= upper.len() {
+                np_row.push(0.0);
+            } else {
+                let int: HashSet<_> = upper.intersection(lower).collect();
+                np_row.push((100.0 * int.len() as f64) / lower.len() as f64)
+            }
+        }
+
+        // now columns, just copying above, clean up later
+        let t_int = self
+            .transpose()
+            .map_err(|_| InteractionMatrixError::NODFError)?;
+
+        let mut pos_col_set_vec = Vec::new();
+        for row in t_int.inner {
+            let positions_of_ones_iter = row
+                .iter()
+                .enumerate()
+                .filter(|(_, &r)| r)
+                .map(|(index, _)| index)
+                .collect::<HashSet<_>>();
+
+            pos_col_set_vec.push(positions_of_ones_iter);
+        }
+        // make combinations
+        let comb_pos_col = pos_col_set_vec.iter().combinations(2);
+
+        // store row number paired
+        let mut np_col = Vec::new();
+        for upper_lower in comb_pos_col {
+            // these should be guaranteed subsets
+            let upper = upper_lower[0];
+            let lower = upper_lower[1];
+            if lower.len() >= upper.len() {
+                np_col.push(0.0);
+            } else {
+                let int: HashSet<_> = upper.intersection(lower).collect();
+                np_col.push((100.0 * int.len() as f64) / lower.len() as f64)
+            }
+        }
+
+        // append all to np_row
+        np_row.append(&mut np_col);
+
+        let mean = np_row.iter().sum::<f64>() / np_row.len() as f64;
+
+        Ok(mean)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    // bring everything in from above
+    use super::*;
+
+    #[test]
+    fn check_nodf() {
+        // create a new interaction matrix
+        // copy the example here
+        // https://nadiah.org/2021/07/16/nodf-nestedness-worked-example
+        let mut int_mat = InteractionMatrix::new(5, 5);
+        int_mat.rownames = vec![
+            "1r".into(),
+            "2r".into(),
+            "3r".into(),
+            "4r".into(),
+            "5r".into(),
+        ];
+        int_mat.colnames = vec![
+            "1c".into(),
+            "2c".into(),
+            "3c".into(),
+            "4c".into(),
+            "5c".into(),
+        ];
+
+        int_mat.inner = vec![
+            vec![true, false, true, true, true],
+            vec![true, true, true, false, false],
+            vec![false, true, true, true, false],
+            vec![true, true, false, false, false],
+            vec![true, true, false, false, false],
+        ];
+
+        let nodf = int_mat.nodf();
+
+        assert_eq!(nodf.unwrap().floor(), 58.333f64.floor());
     }
 }
