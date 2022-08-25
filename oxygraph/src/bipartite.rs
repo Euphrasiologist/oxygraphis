@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use thiserror::Error;
 
-use crate::MARGIN_LR;
+use crate::{scale_fit, MARGIN_LR};
 
 /// Error type for reading in a DSV.
 #[derive(Error, Debug)]
@@ -143,10 +143,6 @@ impl BipartiteGraph {
         // some consts and fns
         // scale the nodes across the bipartite layers
         const NODE_SCALE: f64 = 4.0;
-        // scale a number between zero and 1, given a min/max
-        fn scale_fit(x: f64, min_x: f64, max_x: f64) -> f64 {
-            ((1.0 - 0.1) * ((x - min_x) / (max_x - min_x))) + 0.1
-        }
 
         let (parasites, hosts) = &self.get_parasite_host_from_graph();
 

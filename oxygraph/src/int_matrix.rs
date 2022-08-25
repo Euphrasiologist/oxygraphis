@@ -9,7 +9,7 @@ use permutation;
 use std::collections::HashSet;
 use thiserror::Error;
 
-/// An error type for the interaction matrix 
+/// An error type for the interaction matrix
 /// struct.
 #[derive(Error, Debug)]
 pub enum InteractionMatrixError {
@@ -40,7 +40,8 @@ impl InteractionMatrix {
         }
     }
 
-    /// Sort an interation matrix
+    /// Sort an interation matrix. We use reverse, so that the top left
+    /// of the matrix is the most highly populated.
     pub fn sort(&mut self) {
         // sort the rows and the row labels
         let row_sums: &Vec<usize> = &self
@@ -184,7 +185,7 @@ impl InteractionMatrix {
     /// Can be sorted or unsorted. If you want it to
     /// compute on a sorted matrix, call `.sort()` before
     /// this function.
-    /// 
+    ///
     /// TODO: refactor this code.
     pub fn nodf(&mut self) -> Result<f64, InteractionMatrixError> {
         // following https://nadiah.org/2021/07/16/nodf-nestedness-worked-example
