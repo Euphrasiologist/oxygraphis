@@ -165,10 +165,7 @@ impl BipartiteGraph {
             parasite_pos.insert(*node, (x, y));
 
             parasite_nodes += &format!(
-                "<circle cx=\"{}\" cy=\"{}\" r=\"6\" fill=\"green\"><title>{}</title></circle>\n{}",
-                x,
-                y,
-                spp_name,
+                "<circle cx=\"{x}\" cy=\"{y}\" r=\"6\" fill=\"green\"><title>{spp_name}</title></circle>\n{}",
                 if i >= 1 { "\t" } else { "" }
             );
         }
@@ -203,15 +200,12 @@ impl BipartiteGraph {
             host_pos.insert(*node, (x, y));
 
             host_nodes += &format!(
-                "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"red\"><title>{}</title></circle>\n{}",
-                x,
-                y,
+                "<circle cx=\"{x}\" cy=\"{y}\" r=\"{}\" fill=\"red\"><title>{spp_name}</title></circle>\n{}",
                 scale_fit(
                     r as f64,
                     *incoming_nodes_vec.iter().min().unwrap() as f64,
                     *incoming_nodes_vec.iter().max().unwrap() as f64
                 ) * 5.0,
-                spp_name,
                 if i >= 1 { "\t" } else { "" }
             );
         }
@@ -249,11 +243,7 @@ impl BipartiteGraph {
                 .unwrap_or(parasite_pos.get(&from).unwrap());
 
             edge_links += &format!(
-                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"black\" stroke-width=\"{}\"/>\n{}",
-                x1,
-                y1,
-                x2,
-                y2,
+                "<line x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\" stroke=\"black\" stroke-width=\"{}\"/>\n{}",
                 scale_fit(fitness, *fit_min, *fit_max),
                 if i >= 1 { "\t" } else { "" }
             );
@@ -261,14 +251,13 @@ impl BipartiteGraph {
 
         let svg = format!(
             r#"<svg version="1.1"
-    width="{}" height="{}"
+    width="{width}" height="{height}"
     xmlns="http://www.w3.org/2000/svg">
-    {}
-    {}
-    {}
+    {edge_links}
+    {parasite_nodes}
+    {host_nodes}
 </svg>
-        "#,
-            width, height, edge_links, parasite_nodes, host_nodes
+        "#
         );
 
         println!("{}", svg);

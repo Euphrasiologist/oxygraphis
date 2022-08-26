@@ -81,16 +81,25 @@ impl DerivedGraph {
             let mut scaled_connections =
                 scale_fit(no_connections as f64, con_min + 1.0, con_max) * 6.0;
 
-            if scaled_connections < 2.0 {
-                scaled_connections = 0.0;
-            }
+            // as in, we don't care if they share one host.
+            // but this could be an input parameter.
+            // if scaled_connections < 2.0 {
+            //     scaled_connections = 0.0;
+            // }
 
             let (x1, y1) = pos.get(&from).unwrap();
             // to allow for self parasitism (or association I should say)!
             let (x2, y2) = pos.get(&to).unwrap_or(pos.get(&from).unwrap());
+            // and a title string
+            let edge_title_string = format!(
+                "{} connections between {} and {}",
+                no_connections,
+                graph.node_weight(from).unwrap().0,
+                graph.node_weight(to).unwrap().0
+            );
 
             edges += &format!(
-                "<line x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\" stroke=\"black\" stroke-width=\"{scaled_connections}\"/>\n"
+                "<line x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\" stroke=\"black\" stroke-width=\"{scaled_connections}\"><title>{edge_title_string}</title></line>\n"
             );
         }
 
@@ -179,7 +188,10 @@ impl DerivedGraphs {
 
                     // now add the edges in our parasite graph
                     let overlap: HashSet<_> = n1.1.intersection(n2.1).collect();
-                    ungraph.0.add_edge(*n1.0, *n2.0, overlap.len());
+                    // only add an edge if the overlap.len() > 0 ?
+                    if overlap.len() > 0 {
+                        ungraph.0.add_edge(*n1.0, *n2.0, overlap.len());
+                    }
                 }
                 ungraph
             };

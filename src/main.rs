@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let dg = DerivedGraphs::from_bipartite(bpgraph);
 
     // plot
-    dg.hosts.plot(500.0);
+    dg.hosts.plot(1000.0);
 
     // bpgraph.plot(420, 200);
     // let mut im = InteractionMatrix::from_bipartite(bpgraph);
