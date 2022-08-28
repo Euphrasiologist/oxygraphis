@@ -29,6 +29,14 @@ pub struct InteractionMatrix {
 }
 
 impl InteractionMatrix {
+    /// Some stats about the matrix
+    pub fn stats(&self) -> (usize, usize) {
+        let no_rows = self.rownames.len();
+        let no_cols = self.colnames.len();
+
+        (no_rows, no_cols)
+    }
+    /// Initiate a new [`InteractionMatrix`]
     pub fn new(rn: usize, cn: usize) -> Self {
         // outer vec is the number of rows,
         // inner is the number of columns

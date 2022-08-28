@@ -27,6 +27,12 @@ pub type Shared = usize;
 pub struct DerivedGraph(pub UnGraph<(Species, Connections), Shared>);
 
 impl DerivedGraph {
+    /// Compute the overlap measure between all species
+    /// in a stratum (i.e. this derived graph).
+    pub fn overlap_measure() {
+        todo!()
+    }
+
     /// The plots of [`DerivedGraph`] are going to be circular
     /// graphs with some sugar.
     ///
@@ -72,7 +78,7 @@ impl DerivedGraph {
         let con_min = *connections_vec.iter().min().unwrap() as f64;
         let con_max = *connections_vec.iter().max().unwrap() as f64;
 
-        for (i, edge) in graph.edge_references().enumerate() {
+        for edge in graph.edge_references() {
             let from = edge.source();
             let to = edge.target();
             // use in a minute
@@ -133,6 +139,37 @@ pub struct DerivedGraphs {
 }
 
 impl DerivedGraphs {
+    /// Some basic statistics about the graphs.
+    pub fn stats(&self) -> (usize, usize, usize, usize, usize, usize) {
+        let parasites = &self.parasites.0;
+        let hosts = &self.hosts.0;
+
+        let p_nodes = parasites.node_count();
+        let h_nodes = hosts.node_count();
+        let p_edges = parasites.edge_count();
+        let h_edges = hosts.edge_count();
+
+        // maybe not so helpful. Maybe we want edge count
+        // where weight > 1?
+        let p_edge_fil: Vec<_> = parasites
+            .edge_references()
+            .filter(|e| *e.weight() > 1)
+            .collect();
+        let h_edge_fil: Vec<_> = hosts
+            .edge_references()
+            .filter(|e| *e.weight() > 1)
+            .collect();
+        // TODO: better return type.
+        (
+            p_nodes,
+            p_edges,
+            p_edge_fil.len(),
+            h_nodes,
+            h_edges,
+            h_edge_fil.len(),
+        )
+    }
+
     pub fn from_bipartite(bpgraph: BipartiteGraph) -> Self {
         // extract nodes for each stratum
         // find the set of their connections

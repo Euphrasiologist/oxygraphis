@@ -50,6 +50,17 @@ pub struct BipartiteGraph(pub Graph<Species, Fitness>);
 /// This means we would also be able to do things
 /// like BipartiteGraph::create_random(<no_nodes>, <no_edges>)...
 impl BipartiteGraph {
+    /// Print some stats when the default subcommand is called.
+    pub fn stats(&self) -> (usize, usize, usize) {
+        let (parasites, hosts) = &self.get_parasite_host_from_graph();
+
+        let no_parasites = parasites.len();
+        let no_hosts = hosts.len();
+
+        let no_edges = &self.0.edge_count();
+
+        (no_parasites, no_hosts, *no_edges)
+    }
     /// Function to read into this graph struct from a DSV.
     ///
     /// Input must hav three columns in the order:
@@ -112,6 +123,9 @@ impl BipartiteGraph {
         BipartiteGraph(graph)
     }
 
+    /// Extract the nodes from each stratum of a bipartite graph.
+    ///
+    /// TODO: is this fallible?
     pub fn get_parasite_host_from_graph(
         &self,
     ) -> (Vec<(NodeIndex, &String)>, Vec<(NodeIndex, &String)>) {
@@ -134,6 +148,25 @@ impl BipartiteGraph {
             }
         }
         (parasites, hosts)
+    }
+
+    /// Degree distribution. Simply calculate the degree for each node in the
+    /// graph. Optionally split by stratum?
+    pub fn degree_distribution() {
+        // I imagine there will be tabular data output?
+        todo!()
+    }
+
+    /// Bivariate degree distributions. Enumerate all adjacent nodes
+    /// and calculate the degree for each.
+    ///
+    /// Iterate over the nodes, derive neighbours for each node (Incoming+Outgoing).
+    /// Append these to a list in a sorted order
+    /// sort this final list, and dedup.
+    /// Now for each node pair, calculate the degree for each.
+    /// Print!
+    pub fn bivariate_degree_distribution() {
+        todo!()
     }
 
     /// Make an SVG Plot of a bipartite graph.
