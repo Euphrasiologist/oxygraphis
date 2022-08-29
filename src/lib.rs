@@ -30,6 +30,14 @@ pub fn cli() -> Command<'static> {
                     arg!(-p --plotbp "Render an SVG bipartite graph plot.")
                         .action(clap::ArgAction::SetTrue)
                 )
+                .arg(
+                    arg!(-d --degreedistribution "Return the degree distribution of a bipartite graph.")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
+                    arg!(-b --bivariatedistribution  "Return the bivariate degree distribution of a bipartite graph.")
+                        .action(clap::ArgAction::SetTrue)
+                )
                 .subcommand(
                     Command::new("interaction-matrix")
                         .about("Coerce a bipartite graph into an interaction matrix.")
@@ -75,6 +83,12 @@ pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
             let bipartite_plot = *sub_matches
                 .get_one::<bool>("plotbp")
                 .expect("defaulted by clap.");
+            let degee_distribution = *sub_matches
+                .get_one::<bool>("degreedistribution")
+                .expect("defaulted by clap.");
+            let bivariate_distribution = *sub_matches
+                .get_one::<bool>("bivariatedistribution")
+                .expect("defaulted by clap.");
 
             // everything requires the bipartite graph
             // and must currently go through a DSV.
@@ -88,6 +102,18 @@ pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
                         // make the plot dims CLI args.
                         // but 600 x 400 for now.
                         bpgraph.plot(600, 400);
+                    } else if degee_distribution {
+                        let dist = bpgraph.degree_distribution();
+                        println!("spp\tvalue");
+                        for (s, v) in dist {
+                            println!("{}\t{}", s, v);
+                        }
+                    } else if bivariate_distribution {
+                        let biv_dist = bpgraph.bivariate_degree_distribution();
+                        println!("node1\tnode2");
+                        for (n1, n2) in biv_dist {
+                            println!("{}\t{}", n1, n2);
+                        }
                     } else {
                         // default subcommand output
                         // probably pass this to another function later.
@@ -110,7 +136,8 @@ pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
                     if im_plot {
                         // change these, especially height might need to
                         // be auto generated
-                        im_mat.plot(600, 400);
+                        im_mat.sort();
+                        im_mat.plot(600);
                     } else if nodf {
                         // sort and make nodf.
                         im_mat.sort();

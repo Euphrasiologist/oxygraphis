@@ -127,7 +127,7 @@ impl InteractionMatrix {
     ///
     /// TODO: sort out the height on this
     /// and maybe labels.
-    pub fn plot(&self, width: i32, height: i32) {
+    pub fn plot(&self, width: i32) {
         // space on the x axis and y axis
         let x_spacing = (width as f64 - (MARGIN_LR * 2.0)) / self.colnames.len() as f64;
         let y_spacing = x_spacing; //(height as f64 - (MARGIN_LR * 2.0)) / self.rownames.len() as f64;
@@ -155,7 +155,9 @@ impl InteractionMatrix {
     {}
 </svg>
         "#,
-            width, height, assoc_circles
+            width,
+            (MARGIN_LR * 2.0) + (y_spacing * self.rownames.len() as f64),
+            assoc_circles
         );
 
         println!("{}", svg);

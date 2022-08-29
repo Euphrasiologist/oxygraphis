@@ -50,6 +50,11 @@ pub struct BipartiteGraph(pub Graph<Species, Fitness>);
 /// This means we would also be able to do things
 /// like BipartiteGraph::create_random(<no_nodes>, <no_edges>)...
 impl BipartiteGraph {
+    /// Generate a set of random bipartite graphs with specified
+    /// numbers of nodes in each stratum, and edges between the strata.
+    pub fn random(_parasite_no: usize, _host_no: usize, _edge_no: usize) {
+        todo!()
+    }
     /// Print some stats when the default subcommand is called.
     pub fn stats(&self) -> (usize, usize, usize) {
         let (parasites, hosts) = &self.get_parasite_host_from_graph();
@@ -152,9 +157,16 @@ impl BipartiteGraph {
 
     /// Degree distribution. Simply calculate the degree for each node in the
     /// graph. Optionally split by stratum?
-    pub fn degree_distribution() {
+    pub fn degree_distribution(&self) -> Vec<(String, usize)> {
         // I imagine there will be tabular data output?
-        todo!()
+        let graph = &self.0;
+
+        let mut dist = Vec::new();
+        for (node, spp) in graph.node_references() {
+            let neighbours: Vec<NodeIndex> = graph.neighbors_undirected(node).collect();
+            dist.push((spp.clone(), neighbours.len()))
+        }
+        dist
     }
 
     /// Bivariate degree distributions. Enumerate all adjacent nodes
@@ -165,8 +177,21 @@ impl BipartiteGraph {
     /// sort this final list, and dedup.
     /// Now for each node pair, calculate the degree for each.
     /// Print!
-    pub fn bivariate_degree_distribution() {
-        todo!()
+    pub fn bivariate_degree_distribution(&self) -> Vec<(usize, usize)> {
+        let graph = &self.0;
+
+        let edge_list: Vec<(NodeIndex, NodeIndex)> = graph
+            .edge_references()
+            .map(|e| (e.source().id(), e.target().id()))
+            .collect();
+
+        let mut biv_dist = Vec::new();
+        for (node1, node2) in edge_list {
+            let neighbours1: Vec<NodeIndex> = graph.neighbors_undirected(node1).collect();
+            let neighbours2: Vec<NodeIndex> = graph.neighbors_undirected(node2).collect();
+            biv_dist.push((neighbours1.len(), neighbours2.len()))
+        }
+        biv_dist
     }
 
     /// Make an SVG Plot of a bipartite graph.
