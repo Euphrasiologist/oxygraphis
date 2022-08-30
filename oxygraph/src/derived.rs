@@ -84,8 +84,8 @@ impl DerivedGraph {
             // use in a minute
             let no_connections = *edge.weight();
 
-            let mut scaled_connections =
-                scale_fit(no_connections as f64, con_min + 1.0, con_max) * 6.0;
+            // needs to be mutable if logic hashed out below is used.
+            let scaled_connections = scale_fit(no_connections as f64, con_min + 1.0, con_max) * 6.0;
 
             // as in, we don't care if they share one host.
             // but this could be an input parameter.

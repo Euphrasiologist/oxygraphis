@@ -58,11 +58,39 @@ pub fn cli() -> Command<'static> {
                     )
                     .arg(
                         arg!(-s --stratum [STRATUM] "The stratum to display.")
-                        .default_value("host")
-                        .possible_values(["host", "parasite"])
+                            .default_value("host")
+                            .possible_values(["host", "parasite"])
                     )
+                )
+                .subcommand(Command::new("simulate")
+                    .about("Simulate a number of graphs, and return calculations over the samples.")
+                    .arg(
+                        arg!(--parasitenumber <PARASITENUMBER> "Number of parasite nodes in the graph.")
+                            .required(true)
+                            .value_parser(value_parser!(usize))
+                    )
+                    .arg(
+                        arg!(--hostnumber <HOSTNUMBER> "Number of host nodes in the graph.")
+                            .required(true)
+                            .value_parser(value_parser!(usize))
+                    )
+                    .arg(
+                        arg!(-e --edgecount <EDGECOUNT> "Number of edges in the graph.")
+                            .required(true)
+                            .value_parser(value_parser!(usize))
+                    )
+                    .arg(
+                        arg!(-n --nsims [NSIMS] "Number of random samples to make.")
+                            .value_parser(value_parser!(i32))
+                            .default_value("1000")
+                    )
+                    .arg(
+                        arg!(-c --calculation [CALCULATION] "The calculation to make.")
+                            .default_value("nodf")
+                            .possible_values(["nodf", "degree-distribution", "bivariate-distribution"])
+                    )
+                )
             )
-        )
 }
 
 /// Process all of the matches from the CLI.
@@ -176,6 +204,50 @@ pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
                             "{}\t{}\t{}\t{}\t{}\t{}",
                             p_nodes, p_edges, p_edge_fil, h_nodes, h_edges, h_edge_fil
                         );
+                    }
+                }
+                Some(("simulate", sm_matches)) => {
+                    let parasite_number = *sm_matches
+                        .get_one::<usize>("parasitenumber")
+                        .expect("defaulted by clap?");
+                    let host_number = *sm_matches
+                        .get_one::<usize>("hostnumber")
+                        .expect("defaulted by clap?");
+                    let edge_count = *sm_matches
+                        .get_one::<usize>("edgecount")
+                        .expect("defaulted by clap?");
+                    let n_sims = *sm_matches
+                        .get_one::<i32>("nsims")
+                        .expect("defaulted by clap?");
+
+                    let calculation = &*sm_matches
+                        .get_one::<String>("calculation")
+                        .expect("defaulted by clap.");
+
+                    let mut sim_vec = Vec::new();
+
+                    for _ in 0..n_sims {
+                        let rand_graph =
+                            BipartiteGraph::random(parasite_number, host_number, edge_count)?;
+
+                        match calculation.as_str() {
+                            "nodf" => {
+                                let mut im_mat = InteractionMatrix::from_bipartite(rand_graph);
+                                im_mat.sort();
+                                let nodf = im_mat.nodf()?;
+                                sim_vec.push(nodf);
+                            }
+                            "degree-distribution" => {
+                                unimplemented!()
+                            }
+                            "bivariate-distribution" => {
+                                unimplemented!()
+                            }
+                            _ => unreachable!("clap should make sure we never reach here."),
+                        }
+                    }
+                    for s in sim_vec {
+                        println!("{}", s);
                     }
                 }
                 _ => unreachable!("Should never reach here."),

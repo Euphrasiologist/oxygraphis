@@ -4,6 +4,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoNodeReferences, NodeRef};
 use petgraph::Direction::{Incoming, Outgoing};
 use petgraph::Graph;
+use rand::{self, seq::SliceRandom};
 use serde_derive::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -18,6 +19,15 @@ pub enum ReadDSVError {
     FromPath { source: csv::Error },
     #[error("Problem with StringRecord: {source}")]
     StringRecordParseError { source: csv::Error },
+}
+
+/// Error type for generating a random graph.
+#[derive(Error, Debug)]
+pub enum RandomError {
+    #[error("More edges than is possible for a bipartite graph ({0}).")]
+    MaxEdges(usize),
+    #[error("Number of nodes for a graph must be non-zero.")]
+    NoNodes,
 }
 
 /// A row in the DSV should only be these three columns currently.
@@ -52,8 +62,56 @@ pub struct BipartiteGraph(pub Graph<Species, Fitness>);
 impl BipartiteGraph {
     /// Generate a set of random bipartite graphs with specified
     /// numbers of nodes in each stratum, and edges between the strata.
-    pub fn random(_parasite_no: usize, _host_no: usize, _edge_no: usize) {
-        todo!()
+    ///
+    /// See https://networkx.org/documentation/networkx-1.10/_modules/networkx/algorithms/bipartite/generators.html#gnmk_random_graph
+    ///
+    /// Guard against more nodes than possible?
+    pub fn random(parasite_no: usize, host_no: usize, edge_no: usize) -> Result<Self, RandomError> {
+        let max_edges = parasite_no * host_no;
+        if edge_no > max_edges {
+            return Err(RandomError::MaxEdges(max_edges));
+        }
+        // so we make a new bipartite graph with the number of nodes =
+        // parasite_no + host_no
+        // then get random node from parasites
+        // and random node from hosts
+        // then add while edge count is less than edge_no
+        let mut graph: Graph<Species, Fitness> = Graph::new();
+        // must be greater than no nodes.
+        if parasite_no == 0 || host_no == 0 {
+            return Err(RandomError::NoNodes);
+        }
+
+        let mut p_node_indices = Vec::new();
+        // add the parasite node indices to the graph
+        for _ in 0..parasite_no {
+            let nidx = graph.add_node("".into());
+            p_node_indices.push(nidx);
+        }
+
+        let mut h_node_indices = Vec::new();
+        // add the host node indices to the graph
+        for _ in 0..host_no {
+            let nidx = graph.add_node("".into());
+            h_node_indices.push(nidx);
+        }
+
+        let mut edge_count = 0;
+
+        while edge_count < edge_no {
+            // guarantee these slices are non-empty pls.
+            let p = *p_node_indices.choose(&mut rand::thread_rng()).unwrap();
+            let h = *h_node_indices.choose(&mut rand::thread_rng()).unwrap();
+
+            // check if this edge already exists.
+            if graph.contains_edge(p, h) {
+                continue;
+            }
+            graph.add_edge(p, h, 0.0);
+            edge_count += 1;
+        }
+
+        Ok(BipartiteGraph(graph))
     }
     /// Print some stats when the default subcommand is called.
     pub fn stats(&self) -> (usize, usize, usize) {
