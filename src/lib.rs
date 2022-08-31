@@ -61,6 +61,11 @@ pub fn cli() -> Command<'static> {
                             .default_value("host")
                             .possible_values(["host", "parasite"])
                     )
+                    .arg(
+                        arg!(-r --remove [REMOVE] "Edges with fewer than this number of connections are removed from the graph.")
+                            .default_value("2.0")
+                            .value_parser(value_parser!(f64))
+                    )
                 )
                 .subcommand(Command::new("simulate")
                     .about("Simulate a number of graphs, and return calculations over the samples.")
@@ -85,7 +90,7 @@ pub fn cli() -> Command<'static> {
                             .default_value("1000")
                     )
                     .arg(
-                        arg!(-c --calculation [CALCULATION] "The calculation to make.")
+                        arg!(-c --calculation [CALCULATION] "The calculation to make. Currently only NODF supported.")
                             .default_value("nodf")
                             .possible_values(["nodf", "degree-distribution", "bivariate-distribution"])
                     )
@@ -129,7 +134,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
                     if bipartite_plot {
                         // make the plot dims CLI args.
                         // but 600 x 400 for now.
-                        bpgraph.plot(600, 400);
+                        bpgraph.plot(1600, 700);
                     } else if degee_distribution {
                         let dist = bpgraph.degree_distribution();
                         println!("spp\tvalue");
@@ -165,7 +170,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
                         // change these, especially height might need to
                         // be auto generated
                         im_mat.sort();
-                        im_mat.plot(600);
+                        im_mat.plot(1600);
                     } else if nodf {
                         // sort and make nodf.
                         im_mat.sort();
@@ -188,11 +193,14 @@ pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
                     let stratum = &*dg_matches
                         .get_one::<String>("stratum")
                         .expect("defaulted by clap.");
+                    let remove = *dg_matches
+                        .get_one::<f64>("remove")
+                        .expect("defaulted by clap.");
 
                     if dg_plot {
                         match stratum.as_str() {
-                            "host" => dgs.hosts.plot(600.0),
-                            "parasite" => dgs.parasites.plot(600.0),
+                            "host" => dgs.hosts.plot(600.0, remove),
+                            "parasite" => dgs.parasites.plot(600.0, remove),
                             _ => unreachable!("Should never reach here."),
                         }
                     } else {
@@ -235,6 +243,9 @@ pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
                                 let mut im_mat = InteractionMatrix::from_bipartite(rand_graph);
                                 im_mat.sort();
                                 let nodf = im_mat.nodf()?;
+                                if nodf.is_nan() {
+                                    continue;
+                                }
                                 sim_vec.push(nodf);
                             }
                             "degree-distribution" => {

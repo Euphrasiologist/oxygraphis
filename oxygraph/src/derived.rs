@@ -38,7 +38,7 @@ impl DerivedGraph {
     ///
     /// Modified from a reference here:
     /// https://observablehq.com/@euphrasiologist/hybridisation-in-the-genus-saxifraga
-    pub fn plot(&self, diameter: f64) {
+    pub fn plot(&self, diameter: f64, remove: f64) {
         let graph = &self.0;
         // this will store the positions of the nodes in cartesian space.
         let mut pos = HashMap::new();
@@ -85,13 +85,14 @@ impl DerivedGraph {
             let no_connections = *edge.weight();
 
             // needs to be mutable if logic hashed out below is used.
-            let scaled_connections = scale_fit(no_connections as f64, con_min + 1.0, con_max) * 6.0;
+            let mut scaled_connections =
+                scale_fit(no_connections as f64, con_min + 1.0, con_max) * 6.0;
 
             // as in, we don't care if they share one host.
             // but this could be an input parameter.
-            // if scaled_connections < 2.0 {
-            //     scaled_connections = 0.0;
-            // }
+            if no_connections < remove as usize {
+                scaled_connections = 0.0;
+            }
 
             let (x1, y1) = pos.get(&from).unwrap();
             // to allow for self parasitism (or association I should say)!
