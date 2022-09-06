@@ -1,7 +1,7 @@
+use anyhow::Result;
 use oxygraphis::{cli, process_matches};
-use std::error::Error;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let matches = cli().get_matches();
 
     process_matches(&matches)?;

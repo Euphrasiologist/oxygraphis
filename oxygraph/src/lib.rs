@@ -17,6 +17,13 @@ pub use int_matrix::InteractionMatrix;
 pub mod derived;
 pub use derived::DerivedGraphs;
 
+/// Modularity calculations are in their own module, but they
+/// are built on top of an interaction matrix.
+pub mod modularity;
+
+/// Sorting algorithms on arrays
+pub mod sort;
+
 /// The margins for the all the graph plots
 /// used in this crate.
 const MARGIN_LR: f64 = 20.0;

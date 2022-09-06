@@ -1,6 +1,6 @@
+use anyhow::Result;
 use clap::{arg, value_parser, ArgMatches, Command};
 use oxygraph::{BipartiteGraph, DerivedGraphs, InteractionMatrix};
-use std::error::Error;
 use std::path::PathBuf;
 
 /// Create the CLI in clap.
@@ -67,6 +67,9 @@ pub fn cli() -> Command<'static> {
                             .value_parser(value_parser!(f64))
                     )
                 )
+                .subcommand(Command::new("modularity")
+                    .about("Derive the modularity of a bipartite graph.")
+                )
                 .subcommand(Command::new("simulate")
                     .about("Simulate a number of graphs, and return calculations over the samples.")
                     .arg(
@@ -99,7 +102,7 @@ pub fn cli() -> Command<'static> {
 }
 
 /// Process all of the matches from the CLI.
-pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+pub fn process_matches(matches: &ArgMatches) -> Result<()> {
     match matches.subcommand() {
         // all current functionality under the bipartite subcommand
         Some(("bipartite", sub_matches)) => {
@@ -260,6 +263,11 @@ pub fn process_matches(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
                     for s in sim_vec {
                         println!("{}", s);
                     }
+                }
+                Some(("modularity", _mod_matches)) => {
+                    // for the moment this is a testing ground.
+                    let int_mat = InteractionMatrix::from_bipartite(bpgraph);
+                    oxygraph::modularity::lba_wb_plus(int_mat)?;
                 }
                 _ => unreachable!("Should never reach here."),
             }

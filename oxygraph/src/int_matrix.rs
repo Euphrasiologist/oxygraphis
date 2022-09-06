@@ -2,11 +2,16 @@
 //! matrix, which is a binary matrix representing all the
 //! possible combinations of hosts/parasites (or sites/species).
 
+// TODO:
+// replace the inner matrix with ndarray?
+
 use crate::bipartite::BipartiteGraph;
+use crate::sort::*;
 use crate::MARGIN_LR;
 use itertools::Itertools;
-use permutation;
+use ndarray::{Array2, ArrayBase, Axis, Dim, OwnedRepr};
 use std::collections::HashSet;
+use std::fmt;
 use thiserror::Error;
 
 /// An error type for the interaction matrix
@@ -19,14 +24,34 @@ pub enum InteractionMatrixError {
     NODFError,
 }
 
-/// A simple representation of a matrix
-/// for our purposes. It's a matrix
-/// represented as a nested Vec.
+/// Now using an ndarray with floating point numbers
+/// which can support weighted matrices in the future.
+pub type Matrix = Array2<f64>;
+
+/// A matrix wrapper of ndarray plus some labels
+/// for ease.
 pub struct InteractionMatrix {
-    pub inner: Vec<Vec<bool>>,
+    pub inner: Matrix,
     pub rownames: Vec<String>,
     pub colnames: Vec<String>,
 }
+
+// Possibly not necessary at the end but useful for debugging.
+// impl fmt::Display for InteractionMatrix {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         let mut output_string = String::new();
+//         for el in &self.inner {
+//             let mut temp_string = String::new();
+//             for e in el {
+//                 temp_string += &format!("{}\t", *e as usize);
+//             }
+//             // remove last \t
+//             temp_string.pop();
+//             output_string += &format!("{}\n", temp_string);
+//         }
+//         write!(f, "{}", output_string)
+//     }
+// }
 
 impl InteractionMatrix {
     /// Some stats about the matrix
@@ -40,7 +65,7 @@ impl InteractionMatrix {
     pub fn new(rn: usize, cn: usize) -> Self {
         // outer vec is the number of rows,
         // inner is the number of columns
-        let matrix: Vec<Vec<bool>> = vec![Vec::with_capacity(cn); rn];
+        let matrix: Matrix = Array2::zeros((rn, cn));
         InteractionMatrix {
             inner: matrix,
             rownames: Vec::with_capacity(rn),
@@ -52,43 +77,22 @@ impl InteractionMatrix {
     /// of the matrix is the most highly populated.
     pub fn sort(&mut self) {
         // sort the rows and the row labels
-        let row_sums: &Vec<usize> = &self
-            .inner
-            .iter()
-            .map(|e| e.iter().filter(|f| **f).count())
-            .collect();
-        let per = permutation::sort(row_sums);
-        self.rownames = per.apply_slice(&self.rownames);
-        self.rownames.reverse();
-        self.inner = per.apply_slice(&self.inner);
-        self.inner.reverse();
+        // generate the row sums
+        let row_sums = &self.inner.sum_axis(Axis(1));
+        // generate the permutation order of the row_sums
+        let perm = row_sums.sort_axis_by(Axis(0), |i, j| row_sums[i] > row_sums[j]);
+        // sort the matrix by row order
+        self.inner = self.inner.clone().permute_axis(Axis(0), &perm);
+        // sort the row names in place
+        sort_by_indices(&mut self.rownames, perm.indices);
 
         // sort the columns and the column labels
-        // mod from https://stackoverflow.com/questions/65458789/folding-matrix-rows-element-wise-and-computing-average-in-rust
-        fn compute_col_sums(mat: &[Vec<bool>]) -> Vec<usize> {
-            assert!(!mat.is_empty());
-
-            let col_len = mat[0].len();
-            let col_sums = mat.iter().fold(vec![0usize; col_len], |mut col_sums, row| {
-                row.iter()
-                    .enumerate()
-                    .for_each(|(i, cell)| col_sums[i] += *cell as usize);
-                col_sums
-            });
-
-            col_sums
-        }
-
-        let col_sums = compute_col_sums(&self.inner);
-        let per_cols = permutation::sort(col_sums);
+        let col_sums = &self.inner.sum_axis(Axis(0));
+        let perm_cols = col_sums.sort_axis_by(Axis(0), |i, j| col_sums[i] > col_sums[j]);
         // now we sort each row in the inner vec
-        for el in &mut self.inner {
-            *el = per_cols.apply_slice(el.clone());
-            el.reverse();
-        }
+        self.inner = self.inner.clone().permute_axis(Axis(1), &perm_cols);
         // and sort the column names
-        self.colnames = per_cols.apply_slice(&self.colnames);
-        self.colnames.reverse();
+        sort_by_indices(&mut self.colnames, perm_cols.indices);
     }
 
     /// Make an interaction matrix from a bipartite
@@ -100,12 +104,12 @@ impl InteractionMatrix {
         let mut int_max = InteractionMatrix::new(parasites.len(), hosts.len());
 
         for (i, (n1, _)) in parasites.iter().enumerate() {
-            for (n2, _) in hosts.iter() {
+            for (j, (n2, _)) in hosts.iter().enumerate() {
                 let is_edge = graph.0.contains_edge(*n1, *n2);
                 if is_edge {
-                    int_max.inner[i].push(true);
+                    int_max.inner[[i, j]] = 1.0;
                 } else {
-                    int_max.inner[i].push(false);
+                    int_max.inner[[i, j]] = 0.0;
                 }
             }
         }
@@ -137,7 +141,7 @@ impl InteractionMatrix {
 
         for parasite in 0..self.rownames.len() {
             for host in 0..self.colnames.len() {
-                let is_assoc = self.inner[parasite][host];
+                let is_assoc = self.inner[[parasite, host]] == 1.0;
                 let col = if is_assoc { "black" } else { "white" };
                 let x = (x_spacing * host as f64) + (x_spacing / 2.0) + MARGIN_LR;
                 let y = (y_spacing * parasite as f64) + (y_spacing / 2.0) + MARGIN_LR;
@@ -164,31 +168,14 @@ impl InteractionMatrix {
     }
 
     /// Transpose an interaction matrix.
-    pub fn transpose(&mut self) -> Result<Self, InteractionMatrixError> {
-        let mut matrix = self.inner.clone();
-        for inner in &mut matrix {
-            inner.reverse();
-        }
+    pub fn transpose(&mut self) -> Self {
+        let inner = self.inner.t().to_owned();
 
-        let t = (0..matrix[0].len())
-            .map(|_| {
-                matrix
-                    .iter_mut()
-                    .map(|inner| inner.pop())
-                    .collect::<Option<Vec<bool>>>()
-            })
-            .collect::<Option<Vec<Vec<bool>>>>();
-
-        let inner = match t {
-            Some(m) => m,
-            None => return Err(InteractionMatrixError::TransposeError),
-        };
-
-        Ok(Self {
+        Self {
             inner,
             rownames: self.colnames.clone(),
             colnames: self.rownames.clone(),
-        })
+        }
     }
 
     /// Compute the NODF of an interaction matrix
@@ -201,11 +188,11 @@ impl InteractionMatrix {
         // following https://nadiah.org/2021/07/16/nodf-nestedness-worked-example
         // rows first
         let mut pos_row_set_vec = Vec::new();
-        for row in &self.inner {
+        for row in self.inner.rows() {
             let positions_of_ones_iter = row
                 .iter()
                 .enumerate()
-                .filter(|(_, &r)| r)
+                .filter(|(_, &r)| r == 1.0)
                 .map(|(index, _)| index)
                 .collect::<HashSet<_>>();
 
@@ -229,16 +216,14 @@ impl InteractionMatrix {
         }
 
         // now columns, just copying above, clean up later
-        let t_int = self
-            .transpose()
-            .map_err(|_| InteractionMatrixError::NODFError)?;
+        let t_int = self.transpose();
 
         let mut pos_col_set_vec = Vec::new();
-        for row in t_int.inner {
+        for row in t_int.inner.rows() {
             let positions_of_ones_iter = row
                 .iter()
                 .enumerate()
-                .filter(|(_, &r)| r)
+                .filter(|(_, &r)| r == 1.0)
                 .map(|(index, _)| index)
                 .collect::<HashSet<_>>();
 
@@ -268,10 +253,39 @@ impl InteractionMatrix {
 
         Ok(mean)
     }
+
+    // implement some simple matrix calculations here.
+    // using f64 as a return type when I can.
+
+    /// Sum of an interaction matrix. Should be equal to the number of
+    /// edges in an unweighted graph.
+    pub fn sum_matrix(&self) -> f64 {
+        self.inner.sum()
+    }
+
+    /// The sums of each of the rows in a matrix.
+    pub fn row_sums(&self) -> ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>> {
+        self.inner.sum_axis(Axis(1))
+    }
+
+    /// Calculate the sums of each of the columns in a
+    /// matrix. Probably need to make a copy of the original matrix before
+    /// calling this function.
+    pub fn col_sums(&mut self) -> ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>> {
+        self.inner.sum_axis(Axis(0))
+    }
+
+    /// Compute the Barber's Matrix
+    pub fn barbers_matrix(&self) {}
+
+    /// Naive implementation of matrix multiplication
+    fn mat_mult(&self) {}
 }
 
 #[cfg(test)]
 mod tests {
+
+    use ndarray::arr2;
 
     // bring everything in from above
     use super::*;
@@ -297,13 +311,13 @@ mod tests {
             "5c".into(),
         ];
 
-        int_mat.inner = vec![
-            vec![true, false, true, true, true],
-            vec![true, true, true, false, false],
-            vec![false, true, true, true, false],
-            vec![true, true, false, false, false],
-            vec![true, true, false, false, false],
-        ];
+        int_mat.inner = arr2(&[
+            [1.0, 0.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0, 0.0, 0.0],
+            [0.0, 1.0, 1.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0, 0.0, 0.0],
+        ]);
 
         let nodf = int_mat.nodf();
 
