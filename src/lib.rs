@@ -42,6 +42,10 @@ pub fn cli() -> Command<'static> {
                     Command::new("interaction-matrix")
                         .about("Coerce a bipartite graph into an interaction matrix.")
                         .arg(
+                            arg!(--print "Print the inner matrix as a TSV. Mainly for debugging.")
+                                .action(clap::ArgAction::SetTrue)
+                        )
+                        .arg(
                             arg!(-p --plotim "Render an SVG interaction matrix plot.")
                                 .action(clap::ArgAction::SetTrue)
                         )
@@ -169,6 +173,10 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let nodf = *im_matches
                         .get_one::<bool>("nodf")
                         .expect("defaulted by clap.");
+                    let print = *im_matches
+                        .get_one::<bool>("print")
+                        .expect("defaulted by clap");
+
                     if im_plot {
                         // change these, especially height might need to
                         // be auto generated
@@ -179,6 +187,8 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         im_mat.sort();
                         let nodf = im_mat.nodf()?;
                         println!("NODF\n{}", nodf);
+                    } else if print {
+                        println!("{}", im_mat);
                     } else {
                         // default subcommand output
                         let (no_rows, no_cols) = im_mat.stats();

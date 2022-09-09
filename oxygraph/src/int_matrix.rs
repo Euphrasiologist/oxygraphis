@@ -18,8 +18,6 @@ use thiserror::Error;
 /// struct.
 #[derive(Error, Debug)]
 pub enum InteractionMatrixError {
-    #[error("Could not transpose matrix.")]
-    TransposeError,
     #[error("Error in NODF calculation.")]
     NODFError,
 }
@@ -37,21 +35,21 @@ pub struct InteractionMatrix {
 }
 
 // Possibly not necessary at the end but useful for debugging.
-// impl fmt::Display for InteractionMatrix {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         let mut output_string = String::new();
-//         for el in &self.inner {
-//             let mut temp_string = String::new();
-//             for e in el {
-//                 temp_string += &format!("{}\t", *e as usize);
-//             }
-//             // remove last \t
-//             temp_string.pop();
-//             output_string += &format!("{}\n", temp_string);
-//         }
-//         write!(f, "{}", output_string)
-//     }
-// }
+impl fmt::Display for InteractionMatrix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output_string = String::new();
+        for el in self.inner.rows() {
+            let mut temp_string = String::new();
+            for e in el {
+                temp_string += &format!("{}\t", *e as usize);
+            }
+            // remove last \t
+            temp_string.pop();
+            output_string += &format!("{}\n", temp_string);
+        }
+        write!(f, "{}", output_string)
+    }
+}
 
 impl InteractionMatrix {
     /// Some stats about the matrix
@@ -271,15 +269,23 @@ impl InteractionMatrix {
     /// Calculate the sums of each of the columns in a
     /// matrix. Probably need to make a copy of the original matrix before
     /// calling this function.
-    pub fn col_sums(&mut self) -> ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>> {
+    pub fn col_sums(&self) -> ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>> {
         self.inner.sum_axis(Axis(0))
     }
 
-    /// Compute the Barber's Matrix
-    pub fn barbers_matrix(&self) {}
+    /// Compute the Barber's Matrix. I don't know where this name comes from.
+    pub fn barbers_matrix(&self) -> ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>> {
+        // compute row sums and turn into 2d array with 1 column
+        let row_sums = &self
+            .row_sums()
+            .into_shape((self.rownames.len(), 1))
+            // TODO: remove this unwrap.
+            .unwrap();
+        // col sums remain as a 1d array.
+        let col_sums = &self.col_sums();
 
-    /// Naive implementation of matrix multiplication
-    fn mat_mult(&self) {}
+        &self.inner - ((row_sums * col_sums) / self.sum_matrix())
+    }
 }
 
 #[cfg(test)]
@@ -319,8 +325,75 @@ mod tests {
             [1.0, 1.0, 0.0, 0.0, 0.0],
         ]);
 
-        let nodf = int_mat.nodf();
+        let nodf = int_mat.nodf().unwrap();
 
-        assert_eq!(nodf.unwrap().floor(), 58.333f64.floor());
+        assert_eq!(nodf.floor(), 58.333f64.floor());
+    }
+
+    #[test]
+    fn check_perfect_nodf() {
+        let mut int_mat = InteractionMatrix::new(5, 5);
+        int_mat.rownames = vec![
+            "1r".into(),
+            "2r".into(),
+            "3r".into(),
+            "4r".into(),
+            "5r".into(),
+        ];
+        int_mat.colnames = vec![
+            "1c".into(),
+            "2c".into(),
+            "3c".into(),
+            "4c".into(),
+            "5c".into(),
+        ];
+
+        int_mat.inner = arr2(&[
+            [1.0, 1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0, 0.0],
+        ]);
+
+        let nodf = int_mat.nodf().unwrap();
+
+        assert_eq!(nodf, 100.0);
+    }
+
+    #[test]
+    fn check_sorted_nodf() {
+        let mut int_mat = InteractionMatrix::new(5, 5);
+        int_mat.rownames = vec![
+            "1r".into(),
+            "2r".into(),
+            "3r".into(),
+            "4r".into(),
+            "5r".into(),
+        ];
+        int_mat.colnames = vec![
+            "1c".into(),
+            "2c".into(),
+            "3c".into(),
+            "4c".into(),
+            "5c".into(),
+        ];
+
+        int_mat.inner = arr2(&[
+            [0.0, 0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 1.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0, 1.0],
+            [0.0, 1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0, 1.0, 1.0],
+        ]);
+
+        // NODF should always be maximised (for standard comparison)
+        // so sorting this matrix (which would have a NODF == 0)
+        // to its maximal configuration is best practice.
+        int_mat.sort();
+
+        let nodf = int_mat.nodf().unwrap();
+
+        assert_eq!(nodf, 100.0);
     }
 }
