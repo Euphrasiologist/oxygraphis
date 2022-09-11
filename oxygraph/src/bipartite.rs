@@ -1,9 +1,11 @@
 use csv::ReaderBuilder;
-use petgraph::dot::{Config, Dot};
-use petgraph::graph::NodeIndex;
-use petgraph::visit::{EdgeRef, IntoNodeReferences, NodeRef};
-use petgraph::Direction::{Incoming, Outgoing};
-use petgraph::Graph;
+use petgraph::{
+    dot::{Config, Dot},
+    graph::NodeIndex,
+    visit::{EdgeRef, IntoNodeReferences, NodeRef},
+    Direction::{Incoming, Outgoing},
+    Graph,
+};
 use rand::{self, seq::SliceRandom};
 use serde_derive::Deserialize;
 use std::collections::HashMap;

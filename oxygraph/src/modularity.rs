@@ -138,7 +138,7 @@ fn weighted_modularity(
     hold_sum / mat_sum
 }
 
-/// Second weighted modularity calculation
+/// Second weighted modularity calculation.
 fn weighted_modularity_2(
     b_matrix: &ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>,
     mat_sum: f64,
@@ -193,9 +193,7 @@ fn weighted_modularity_2(
     trace(inner_matrix)
 }
 
-/// Stage one of the label propagation algorithm
-///
-/// None of this function has been tested yet :/
+/// Stage one of the label propagation algorithm.
 fn stage_one_lpa_wbdash(
     row_marginals: ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     col_marginals: ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
@@ -441,6 +439,7 @@ fn stage_two_lpa_wbdash(
     (red_labels.clone(), blue_labels.clone(), qb_now)
 }
 
+/// Locally maximise inside `stage_one_lpa_wbdash`.
 fn local_maximisation(
     row_marginals: ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     col_marginals: ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,

@@ -2,9 +2,6 @@
 //! matrix, which is a binary matrix representing all the
 //! possible combinations of hosts/parasites (or sites/species).
 
-// TODO:
-// replace the inner matrix with ndarray?
-
 use crate::bipartite::BipartiteGraph;
 use crate::sort::*;
 use crate::MARGIN_LR;
