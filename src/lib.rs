@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{arg, value_parser, ArgMatches, Command};
-use oxygraph::{BipartiteGraph, DerivedGraphs, InteractionMatrix};
+use oxygraph::{BipartiteGraph, DerivedGraphs, InteractionMatrix, LbaWbPlus};
 use std::path::PathBuf;
 
 /// Create the CLI in clap.
@@ -275,9 +275,11 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     }
                 }
                 Some(("modularity", _mod_matches)) => {
-                    // for the moment this is a testing ground.
+                    // create the interaction matrix
                     let int_mat = InteractionMatrix::from_bipartite(bpgraph);
-                    oxygraph::modularity::lba_wb_plus(int_mat)?;
+                    // call the only algorithm we currently implement.
+                    let LbaWbPlus { modularity, .. } = oxygraph::modularity::lba_wb_plus(int_mat);
+                    println!("Modularity using LPAwb+: {}", modularity);
                 }
                 _ => unreachable!("Should never reach here."),
             }

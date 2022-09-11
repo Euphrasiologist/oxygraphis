@@ -11,17 +11,15 @@ use core::f64::NAN;
 use ndarray::{Array, Array1, Array2, ArrayBase, Dim, OwnedRepr};
 use rand::seq::SliceRandom;
 use std::collections::HashSet;
-use thiserror::Error;
 
-// some general comments:
-// is initialising an array with zeros and then changing them to NAN's inefficient?
-// testing is going to be hard...
+// Will need an error type for this module in the future.
 
-/// Error type for modularity.
-#[derive(Error, Debug)]
-pub enum ModularityError {
-    #[error("Could not transpose matrix: {0}")]
-    TransposeError(String),
+/// A struct just to hold the data from the output of the modularity
+/// computation.
+pub struct LbaWbPlus {
+    pub row_labels: Vec<usize>,
+    pub column_labels: Vec<usize>,
+    pub modularity: f64,
 }
 
 /// Label propagation algorithm for weighted bipartite networks that finds modularity.
@@ -31,7 +29,7 @@ pub enum ModularityError {
 /// Stephen Beckett ( https://github.com/sjbeckett/weighted-modularity-LPAwbPLUS )
 ///
 /// No initial module guess to start with.
-pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> Result<(), ModularityError> {
+pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> LbaWbPlus {
     // Make sure the smallest matrix dimension represent the red labels by making
     // them the rows (if matrix is transposed here, will be transposed back at the end)
     let row_len = matrix.rownames.len();
@@ -45,19 +43,9 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> Result<(), ModularityError>
     }
 
     let mat_sum = matrix.sum_matrix();
-    println!("Initial matrix sum (var = mat_sum): {:?}", mat_sum);
     let col_marginals = matrix.col_sums();
-    println!(
-        "Initial column marginals (var = col_marginals): {:?}",
-        col_marginals
-    );
     let row_marginals = matrix.row_sums();
-    println!(
-        "Initial marginals (var = row_marginals): {:?}",
-        row_marginals
-    );
     let b_matrix = matrix.barbers_matrix();
-    println!("Barbers Matrix (var = b_matrix): {:?}", b_matrix);
 
     // initialise labels
     // columns are hosts, rows are parasites
@@ -66,7 +54,6 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> Result<(), ModularityError>
     let red_labels: Array1<f64> = Array::linspace(0.0, row_len as f64 - 1.0, row_len);
 
     // Run phase 1
-    println!("Starting stage_one_lpa_wbdash.");
     let out_list = stage_one_lpa_wbdash(
         row_marginals.clone(),
         col_marginals.clone(),
@@ -77,18 +64,12 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> Result<(), ModularityError>
         blue_labels,
         0, // hack the first iteration.
     );
-    println!("Phase one completed.");
 
     let mut red_labels = out_list.0;
     let mut blue_labels = out_list.1;
     let qb_now = out_list.2;
 
-    println!("RED LABELS AFTER PHASE 1: {}", red_labels);
-    println!("BLUE LABELS AFTER PHASE 1: {}", blue_labels);
-    println!("qb_now AFTER PHASE 1: {}", qb_now);
-
     // Run phase 2
-    println!("Phase two started.");
     let out_list2 = stage_two_lpa_wbdash(
         row_marginals,
         col_marginals,
@@ -99,19 +80,34 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> Result<(), ModularityError>
         &mut blue_labels,
         qb_now,
     );
-    println!("Phase two ended.");
 
-    println!("ROW LABELS: {:?}", out_list2.0);
-    println!("COLUMN LABELS: {:?}", out_list2.1);
-    println!("MODULARITY: {:?}", out_list2.2);
+    let row_labels: Vec<usize> = out_list2
+        .0
+        .into_raw_vec()
+        .iter()
+        .map(|e| *e as usize)
+        .collect();
+    let column_labels: Vec<usize> = out_list2
+        .1
+        .into_raw_vec()
+        .iter()
+        .map(|e| *e as usize)
+        .collect();
+    let modularity = out_list2.2;
 
     if flipped == 1 {
-        println!("ROW LABELS: {:?}", out_list2.0);
-        println!("COLUMN LABELS: {:?}", out_list2.1);
-        println!("MODULARITY: {:?}", out_list2.2);
+        return LbaWbPlus {
+            row_labels: column_labels,
+            column_labels: row_labels,
+            modularity,
+        };
     }
 
-    Ok(())
+    LbaWbPlus {
+        row_labels,
+        column_labels,
+        modularity,
+    }
 }
 
 /// Returns the sum of the diagonal of a 2D Array<f64>
@@ -148,7 +144,7 @@ fn weighted_modularity_2(
     mat_sum: f64,
     red_labels: Array1<f64>,
     blue_labels: Array1<f64>,
-    iteration: i32,
+    _iteration: i32, // for debugging
 ) -> f64 {
     // create the unique red elements
     let mut uniq_red = red_labels.clone().into_raw_vec();
@@ -174,15 +170,6 @@ fn weighted_modularity_2(
         uniq_blue_len = 1;
     }
 
-    println!(
-        "Unique red elements at iteration {}: {:?}",
-        iteration, uniq_red
-    );
-    println!(
-        "Unique blue elements at iteration {}: {:?}",
-        iteration, uniq_blue
-    );
-
     // initiate the labelled matrices
     let mut label_mat_1: Array2<f64> = Array2::zeros((uniq_red_len, red_labels.len()));
     let mut label_mat_2: Array2<f64> = Array2::zeros((blue_labels.len(), uniq_blue_len));
@@ -193,8 +180,6 @@ fn weighted_modularity_2(
         label_mat_1[[aa_index, aa]] = 1.0;
     }
 
-    // println!("weighted_modularity_2:label_mat_1: {:?}", label_mat_1);
-
     for aa in 0..blue_labels.len() {
         let aa_index = uniq_blue
             .iter()
@@ -203,15 +188,8 @@ fn weighted_modularity_2(
         label_mat_2[[aa, aa_index]] = 1.0;
     }
 
-    // println!("weighted_modularity_2:label_mat_2: {:?}", label_mat_2);
-
     let inner_matrix = (label_mat_1.dot(&b_matrix.dot(&label_mat_2))) / mat_sum;
 
-    println!(
-        "Weighted modularity (2) at iteration {}: {:?}",
-        iteration,
-        trace(inner_matrix.clone())
-    );
     trace(inner_matrix)
 }
 
@@ -232,16 +210,6 @@ fn stage_one_lpa_wbdash(
     ndarray::ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     f64,
 ) {
-    println!("Iteration: {}", iteration_counter);
-
-    println!(
-        "Red labels for iteration {}: {:?}",
-        iteration_counter, red_labels
-    );
-    println!(
-        "Blue labels for iteration {}: {:?}",
-        iteration_counter, blue_labels
-    );
     // label lengths
     let blue_label_length = blue_labels.len();
     let red_label_length = red_labels.len();
@@ -296,21 +264,7 @@ fn stage_one_lpa_wbdash(
         total_blue_degrees.fill(0.0);
     }
 
-    println!(
-        "Total red degrees for iteration {}: {:?}",
-        iteration_counter, total_red_degrees
-    );
-    println!(
-        "Total blue degrees for iteration {}: {:?}",
-        iteration_counter, total_blue_degrees
-    );
-
     // locally maximise modularity!
-
-    println!(
-        "Start local maximisation for iteration {}",
-        iteration_counter
-    );
     let out_list = local_maximisation(
         row_marginals,
         col_marginals,
@@ -323,8 +277,6 @@ fn stage_one_lpa_wbdash(
         total_blue_degrees,
         iteration_counter,
     );
-
-    println!("end local maximisation");
 
     let red_labels = out_list.0;
     let blue_labels = out_list.1;
@@ -358,7 +310,6 @@ fn stage_two_lpa_wbdash(
     ndarray::ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     f64,
 ) {
-    println!("starting stage_two_lpa_wbdash");
     let mut divisions_found = division(red_labels, blue_labels);
     let mut num_div = divisions_found.len();
 
@@ -507,27 +458,12 @@ fn local_maximisation(
     f64,
 ) {
     // find the score for the current partition
-    println!(
-        "Red labels for iteration: {} = {}",
-        outer_iteration_counter,
-        red_labels.to_owned()
-    );
-    println!(
-        "Blue labels for iteration: {} = {}",
-        outer_iteration_counter,
-        blue_labels.to_owned()
-    );
-
     let mut qb_after = weighted_modularity_2(
         &b_matrix,
         mat_sum,
         red_labels.to_owned(),
         blue_labels.to_owned(),
         outer_iteration_counter,
-    );
-    println!(
-        "QB after for iteration: {} = {}",
-        outer_iteration_counter, qb_after
     );
 
     // not sure why we do this.
@@ -542,10 +478,7 @@ fn local_maximisation(
     while iterate_flag {
         // Save old information
         let qb_before = qb_after;
-        println!(
-            "QB before for inner iteration: {} = {}",
-            iteration_counter, qb_before
-        );
+
         let old_red_labels = red_labels.clone();
         let old_blue_labels = blue_labels.clone();
         let old_trd = total_red_degrees.clone();
@@ -690,21 +623,7 @@ fn local_maximisation(
                 total_red_degrees[red_labels[aa] as usize] + row_marginals[aa]
         }
 
-        println!(
-            "Total blue degrees for inner iteration: {} = {:?}",
-            iteration_counter, total_blue_degrees
-        );
-        println!(
-            "Total red degrees for inner iteration: {} = {:?}",
-            iteration_counter, total_red_degrees
-        );
-
         qb_after = weighted_modularity(&b_matrix, mat_sum, &red_labels, &blue_labels);
-
-        println!(
-            "QB after for inner iteration: {} = {}",
-            iteration_counter, qb_after
-        );
 
         if qb_after <= qb_before {
             *red_labels = old_red_labels;
@@ -720,4 +639,38 @@ fn local_maximisation(
     let qb_now = qb_after;
 
     (red_labels.clone(), blue_labels.clone(), qb_now)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ndarray::arr2;
+    use crate::InteractionMatrix;
+
+    #[test]
+    fn test_modularity() {
+        let mut int_mat = InteractionMatrix::new(3, 3);
+        int_mat.rownames = vec![
+            "1r".into(),
+            "2r".into(),
+            "3r".into(),
+        ];
+        int_mat.colnames = vec![
+            "1c".into(),
+            "2c".into(),
+            "3c".into(),
+        ];
+
+        int_mat.inner = arr2(&[
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+        ]);
+
+        let LbaWbPlus {modularity, ..} = lba_wb_plus(int_mat);
+
+        // kind of hacky way to test, but couldn't be bothered
+        // to add another crate to test float equivalence.
+        assert_eq!((modularity * 100.0).floor(), 25.0)
+    }
 }
