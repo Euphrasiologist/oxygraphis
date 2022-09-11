@@ -16,7 +16,7 @@ use std::collections::HashSet;
 
 /// A struct just to hold the data from the output of the modularity
 /// computation.
-pub struct LbaWbPlus {
+pub struct LpaWbPlus {
     pub row_labels: Vec<usize>,
     pub column_labels: Vec<usize>,
     pub modularity: f64,
@@ -29,7 +29,7 @@ pub struct LbaWbPlus {
 /// Stephen Beckett ( https://github.com/sjbeckett/weighted-modularity-LPAwbPLUS )
 ///
 /// No initial module guess to start with.
-pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> LbaWbPlus {
+pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> LpaWbPlus {
     // Make sure the smallest matrix dimension represent the red labels by making
     // them the rows (if matrix is transposed here, will be transposed back at the end)
     let row_len = matrix.rownames.len();
@@ -96,14 +96,14 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> LbaWbPlus {
     let modularity = out_list2.2;
 
     if flipped == 1 {
-        return LbaWbPlus {
+        return LpaWbPlus {
             row_labels: column_labels,
             column_labels: row_labels,
             modularity,
         };
     }
 
-    LbaWbPlus {
+    LpaWbPlus {
         row_labels,
         column_labels,
         modularity,
@@ -644,30 +644,18 @@ fn local_maximisation(
 #[cfg(test)]
 mod test {
     use super::*;
-    use ndarray::arr2;
     use crate::InteractionMatrix;
+    use ndarray::arr2;
 
     #[test]
     fn test_modularity() {
         let mut int_mat = InteractionMatrix::new(3, 3);
-        int_mat.rownames = vec![
-            "1r".into(),
-            "2r".into(),
-            "3r".into(),
-        ];
-        int_mat.colnames = vec![
-            "1c".into(),
-            "2c".into(),
-            "3c".into(),
-        ];
+        int_mat.rownames = vec!["1r".into(), "2r".into(), "3r".into()];
+        int_mat.colnames = vec!["1c".into(), "2c".into(), "3c".into()];
 
-        int_mat.inner = arr2(&[
-            [1.0, 0.0, 0.0],
-            [1.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-        ]);
+        int_mat.inner = arr2(&[[1.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
 
-        let LbaWbPlus {modularity, ..} = lba_wb_plus(int_mat);
+        let LpaWbPlus { modularity, .. } = lba_wb_plus(int_mat);
 
         // kind of hacky way to test, but couldn't be bothered
         // to add another crate to test float equivalence.

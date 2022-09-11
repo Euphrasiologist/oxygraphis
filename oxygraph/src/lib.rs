@@ -20,7 +20,7 @@ pub use derived::DerivedGraphs;
 /// Modularity calculations are in their own module, but they
 /// are built on top of an interaction matrix.
 pub mod modularity;
-pub use modularity::LbaWbPlus;
+pub use modularity::LpaWbPlus;
 
 /// Sorting algorithms on arrays
 pub mod sort;

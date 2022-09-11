@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{arg, value_parser, ArgMatches, Command};
-use oxygraph::{BipartiteGraph, DerivedGraphs, InteractionMatrix, LbaWbPlus};
+use oxygraph::{BipartiteGraph, DerivedGraphs, InteractionMatrix, LpaWbPlus};
 use std::path::PathBuf;
 
 /// Create the CLI in clap.
@@ -97,9 +97,9 @@ pub fn cli() -> Command<'static> {
                             .default_value("1000")
                     )
                     .arg(
-                        arg!(-c --calculation [CALCULATION] "The calculation to make. Currently only NODF supported.")
+                        arg!(-c --calculation [CALCULATION] "The calculation to make.")
                             .default_value("nodf")
-                            .possible_values(["nodf", "degree-distribution", "bivariate-distribution"])
+                            .possible_values(["nodf", "lpawbplus", "degree-distribution", "bivariate-distribution"])
                     )
                 )
             )
@@ -261,6 +261,12 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                                 }
                                 sim_vec.push(nodf);
                             }
+                            "lpawbplus" => {
+                                let im_mat = InteractionMatrix::from_bipartite(rand_graph);
+                                let LpaWbPlus { modularity, .. } =
+                                    oxygraph::modularity::lba_wb_plus(im_mat);
+                                sim_vec.push(modularity);
+                            }
                             "degree-distribution" => {
                                 unimplemented!()
                             }
@@ -278,7 +284,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     // create the interaction matrix
                     let int_mat = InteractionMatrix::from_bipartite(bpgraph);
                     // call the only algorithm we currently implement.
-                    let LbaWbPlus { modularity, .. } = oxygraph::modularity::lba_wb_plus(int_mat);
+                    let LpaWbPlus { modularity, .. } = oxygraph::modularity::lba_wb_plus(int_mat);
                     println!("Modularity using LPAwb+: {}", modularity);
                 }
                 _ => unreachable!("Should never reach here."),
