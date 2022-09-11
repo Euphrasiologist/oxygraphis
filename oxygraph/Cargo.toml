@@ -10,6 +10,7 @@ Algorithms and structures on ecological graphs.
 """
 keywords = ["graph", "ecology", "bipartite"]
 categories = ["algorithms", "science"]
+license = "MIT"
 
 [dependencies]
 csv = "1.1.6"
