@@ -45,13 +45,19 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> Result<(), ModularityError>
     }
 
     let mat_sum = matrix.sum_matrix();
-    println!("MAT SUM: {:?}", mat_sum);
+    println!("Initial matrix sum (var = mat_sum): {:?}", mat_sum);
     let col_marginals = matrix.col_sums();
-    println!("COL MARGINALS: {:?}", col_marginals);
+    println!(
+        "Initial column marginals (var = col_marginals): {:?}",
+        col_marginals
+    );
     let row_marginals = matrix.row_sums();
-    println!("ROW MARGINALS: {:?}", row_marginals);
+    println!(
+        "Initial marginals (var = row_marginals): {:?}",
+        row_marginals
+    );
     let b_matrix = matrix.barbers_matrix();
-    println!("B MATRIX: {:?}", b_matrix);
+    println!("Barbers Matrix (var = b_matrix): {:?}", b_matrix);
 
     // initialise labels
     // columns are hosts, rows are parasites
@@ -60,7 +66,7 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> Result<(), ModularityError>
     let red_labels: Array1<f64> = Array::linspace(0.0, row_len as f64 - 1.0, row_len);
 
     // Run phase 1
-    println!("Phase one started.");
+    println!("Starting stage_one_lpa_wbdash.");
     let out_list = stage_one_lpa_wbdash(
         row_marginals.clone(),
         col_marginals.clone(),
@@ -69,6 +75,7 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> Result<(), ModularityError>
         mat_sum,
         red_labels,
         blue_labels,
+        0, // hack the first iteration.
     );
     println!("Phase one completed.");
 
@@ -121,13 +128,13 @@ fn weighted_modularity(
 ) -> f64 {
     let mut hold_sum = 0f64;
 
-    for rr in 0..red_labels.len() - 1 {
+    for rr in 0..red_labels.len() {
         for cc in 0..blue_labels.len() {
             let kroneckerdelta = red_labels[rr] == blue_labels[cc];
             if kroneckerdelta {
-                hold_sum = hold_sum + b_matrix[[rr, cc]];
+                hold_sum = hold_sum + (b_matrix[[rr, cc]] * 1.0);
             } else {
-                hold_sum = 1.0;
+                hold_sum = hold_sum + (b_matrix[[rr, cc]] * 0.0);
             }
         }
     }
@@ -141,6 +148,7 @@ fn weighted_modularity_2(
     mat_sum: f64,
     red_labels: Array1<f64>,
     blue_labels: Array1<f64>,
+    iteration: i32,
 ) -> f64 {
     // create the unique red elements
     let mut uniq_red = red_labels.clone().into_raw_vec();
@@ -166,18 +174,18 @@ fn weighted_modularity_2(
         uniq_blue_len = 1;
     }
 
-    println!("weighted_modularity_2: UNIQUE RED ELEMENTS: {:?}", uniq_red);
     println!(
-        "weighted_modularity_2: UNIQUE BLUE ELEMENTS: {:?}",
-        uniq_blue
+        "Unique red elements at iteration {}: {:?}",
+        iteration, uniq_red
+    );
+    println!(
+        "Unique blue elements at iteration {}: {:?}",
+        iteration, uniq_blue
     );
 
     // initiate the labelled matrices
     let mut label_mat_1: Array2<f64> = Array2::zeros((uniq_red_len, red_labels.len()));
     let mut label_mat_2: Array2<f64> = Array2::zeros((blue_labels.len(), uniq_blue_len));
-
-    println!("weighted_modularity_2:label_mat_1: {:?}", label_mat_1);
-    println!("weighted_modularity_2:label_mat_2: {:?}", label_mat_2);
 
     // populate the labelled matrices
     for aa in 0..red_labels.len() - 1 {
@@ -185,7 +193,7 @@ fn weighted_modularity_2(
         label_mat_1[[aa_index, aa]] = 1.0;
     }
 
-    println!("weighted_modularity_2:label_mat_1: {:?}", label_mat_1);
+    // println!("weighted_modularity_2:label_mat_1: {:?}", label_mat_1);
 
     for aa in 0..blue_labels.len() {
         let aa_index = uniq_blue
@@ -195,12 +203,15 @@ fn weighted_modularity_2(
         label_mat_2[[aa, aa_index]] = 1.0;
     }
 
-    println!("weighted_modularity_2:label_mat_2: {:?}", label_mat_2);
+    // println!("weighted_modularity_2:label_mat_2: {:?}", label_mat_2);
 
     let inner_matrix = (label_mat_1.dot(&b_matrix.dot(&label_mat_2))) / mat_sum;
 
-    println!("weighted_modularity_2: {:?}", inner_matrix);
-
+    println!(
+        "Weighted modularity (2) at iteration {}: {:?}",
+        iteration,
+        trace(inner_matrix.clone())
+    );
     trace(inner_matrix)
 }
 
@@ -215,18 +226,25 @@ fn stage_one_lpa_wbdash(
     mat_sum: f64,
     mut red_labels: Array1<f64>,
     mut blue_labels: Array1<f64>,
+    iteration_counter: i32,
 ) -> (
     ndarray::ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     ndarray::ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     f64,
 ) {
-    println!("RED LABELS: {:?}", red_labels);
-    println!("BLUE LABELS: {:?}", blue_labels);
+    println!("Iteration: {}", iteration_counter);
+
+    println!(
+        "Red labels for iteration {}: {:?}",
+        iteration_counter, red_labels
+    );
+    println!(
+        "Blue labels for iteration {}: {:?}",
+        iteration_counter, blue_labels
+    );
     // label lengths
     let blue_label_length = blue_labels.len();
-    println!("BLUE LABELS LENGTH: {:?}", blue_label_length);
     let red_label_length = red_labels.len();
-    println!("RED LABELS LENGTH: {:?}", red_label_length);
 
     // red and blue 1D degree arrays.
     let mut total_red_degrees: Array1<f64> = Array1::zeros(
@@ -249,45 +267,27 @@ fn stage_one_lpa_wbdash(
         total_blue_degrees.fill(NAN);
     }
 
-    println!("TOTAL RED DEGREES: {:?}", total_red_degrees);
-    println!("TOTAL BLUE DEGREES: {:?}", total_blue_degrees);
-
     // now fill up these containers according to current labels
     // red!
-    println!("start labelling");
     for aa in 0..red_label_length {
         let red_deg_index = total_red_degrees[red_labels[aa] as usize];
-        println!(
-            "stage_one_lpa_wbdash\taa: {}\tred deg idx: {}",
-            aa, red_deg_index
-        );
 
         if red_deg_index.is_nan() {
-            println!(
-                "stage_one_lpa_wbdash\ttotal_red_degrees 1\tidx={}",
-                red_labels[aa] as usize
-            );
             total_red_degrees[red_labels[aa] as usize] = row_marginals[aa];
         } else {
-            println!("stage_one_lpa_wbdash\ttotal_red_degrees 2");
             total_red_degrees[red_labels[aa] as usize] =
                 total_red_degrees[red_labels[aa] as usize] + row_marginals[aa];
         }
     }
 
-    println!("TOTAL RED DEGREES FILLED: {:?}", total_red_degrees);
-
     // blue!
     let no_blue_nans = blue_labels.iter().filter(|&e| e.is_nan()).count();
-    println!("NUMBER OF BLUE NANS: {}", no_blue_nans);
 
     if no_blue_nans != blue_label_length {
         for bb in 0..blue_label_length {
-            println!("stage_one_lpa_wbdash\ttotal_blue_degrees 1");
             if total_blue_degrees[blue_labels[bb] as usize].is_nan() {
                 total_blue_degrees[blue_labels[bb] as usize] = col_marginals[bb];
             } else {
-                println!("stage_one_lpa_wbdash\ttotal_blue_degrees 2");
                 total_blue_degrees[blue_labels[bb] as usize] =
                     total_blue_degrees[blue_labels[bb] as usize] + col_marginals[bb];
             }
@@ -295,12 +295,22 @@ fn stage_one_lpa_wbdash(
     } else {
         total_blue_degrees.fill(0.0);
     }
-    println!("TOTAL BLUE DEGREES FILLED: {:?}", total_blue_degrees);
-    println!("end labelling");
+
+    println!(
+        "Total red degrees for iteration {}: {:?}",
+        iteration_counter, total_red_degrees
+    );
+    println!(
+        "Total blue degrees for iteration {}: {:?}",
+        iteration_counter, total_blue_degrees
+    );
 
     // locally maximise modularity!
 
-    println!("start local maximisation");
+    println!(
+        "Start local maximisation for iteration {}",
+        iteration_counter
+    );
     let out_list = local_maximisation(
         row_marginals,
         col_marginals,
@@ -311,6 +321,7 @@ fn stage_one_lpa_wbdash(
         &mut blue_labels,
         total_red_degrees,
         total_blue_degrees,
+        iteration_counter,
     );
 
     println!("end local maximisation");
@@ -352,6 +363,7 @@ fn stage_two_lpa_wbdash(
     let mut num_div = divisions_found.len();
 
     let mut iterate_flag = true;
+    let mut iteration_counter = 1;
 
     while iterate_flag {
         let mut combined_divisions_this_time = 0;
@@ -377,6 +389,7 @@ fn stage_two_lpa_wbdash(
                         mat_sum,
                         check_red.clone(),
                         check_blue.clone(),
+                        0,
                     );
 
                     if qq > qb_now {
@@ -397,8 +410,13 @@ fn stage_two_lpa_wbdash(
                                 .unwrap();
                             check_blue_2[*check_blue_2_index as usize] = mod_1 as f64;
 
-                            let first_qq =
-                                weighted_modularity_2(b_matrix, mat_sum, check_red_2, check_blue_2);
+                            let first_qq = weighted_modularity_2(
+                                b_matrix,
+                                mat_sum,
+                                check_red_2,
+                                check_blue_2,
+                                0,
+                            );
 
                             if first_qq > qq {
                                 found_better = true;
@@ -421,8 +439,13 @@ fn stage_two_lpa_wbdash(
                             check_blue_2[*check_blue_2_index as usize] =
                                 divisions_found[div2check] as f64;
 
-                            let second_qq =
-                                weighted_modularity_2(b_matrix, mat_sum, check_red_2, check_blue_2);
+                            let second_qq = weighted_modularity_2(
+                                b_matrix,
+                                mat_sum,
+                                check_red_2,
+                                check_blue_2,
+                                0,
+                            );
 
                             if second_qq > qq {
                                 found_better = true;
@@ -452,6 +475,7 @@ fn stage_two_lpa_wbdash(
             mat_sum,
             red_labels.clone(),
             blue_labels.clone(),
+            iteration_counter,
         );
 
         *red_labels = out_list.0;
@@ -459,6 +483,8 @@ fn stage_two_lpa_wbdash(
         qb_now = out_list.2;
         divisions_found = division(red_labels, blue_labels);
         num_div = divisions_found.len();
+
+        iteration_counter += 1;
     }
 
     (red_labels.clone(), blue_labels.clone(), qb_now)
@@ -474,21 +500,35 @@ fn local_maximisation(
     blue_labels: &mut Array1<f64>,
     mut total_red_degrees: ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     mut total_blue_degrees: ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
+    outer_iteration_counter: i32,
 ) -> (
     ndarray::ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     ndarray::ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     f64,
 ) {
     // find the score for the current partition
-    println!("local maximisation, weighted modularity 2 start");
+    println!(
+        "Red labels for iteration: {} = {}",
+        outer_iteration_counter,
+        red_labels.to_owned()
+    );
+    println!(
+        "Blue labels for iteration: {} = {}",
+        outer_iteration_counter,
+        blue_labels.to_owned()
+    );
+
     let mut qb_after = weighted_modularity_2(
         &b_matrix,
         mat_sum,
         red_labels.to_owned(),
         blue_labels.to_owned(),
+        outer_iteration_counter,
     );
-    println!("QB AFTER: {}", qb_after);
-    println!("local maximisation, weighted modularity 2 end");
+    println!(
+        "QB after for iteration: {} = {}",
+        outer_iteration_counter, qb_after
+    );
 
     // not sure why we do this.
     if qb_after.is_nan() {
@@ -497,10 +537,15 @@ fn local_maximisation(
 
     // turn this to false once we have optimised.
     let mut iterate_flag = true;
+    let mut iteration_counter = 1;
 
     while iterate_flag {
         // Save old information
         let qb_before = qb_after;
+        println!(
+            "QB before for inner iteration: {} = {}",
+            iteration_counter, qb_before
+        );
         let old_red_labels = red_labels.clone();
         let old_blue_labels = blue_labels.clone();
         let old_trd = total_red_degrees.clone();
@@ -525,15 +570,15 @@ fn local_maximisation(
         let blue_label_choices = Array::from(blue_label_choices_vec);
 
         for bb in 0..blue_labels.len() {
-            println!("checkpoint 1");
-            if !blue_labels[bb].is_nan() {
-                total_blue_degrees[blue_labels[bb] as usize] -= col_marginals[bb];
+            if blue_labels[bb].is_nan() == false {
+                total_blue_degrees[blue_labels[bb] as usize] =
+                    total_blue_degrees[blue_labels[bb] as usize] - col_marginals[bb];
             }
+
             let mut change_blue_label_test: Array1<f64> = Array1::zeros(blue_label_choices.len());
             change_blue_label_test.fill(NAN);
 
-            println!("checkpoint 2");
-            for ww in 0..blue_label_choices.len() - 1 {
+            for ww in 0..blue_label_choices.len() {
                 // so iterate over the red labels
                 let red_label_test: Array1<f64> = red_labels
                     .iter()
@@ -567,18 +612,15 @@ fn local_maximisation(
                     labels.push(index);
                 }
             }
-            println!("checkpoint 3");
             // generate the new label index
             let new_label_index = *labels.choose(&mut rand::thread_rng()).unwrap();
             blue_labels[bb] = blue_label_choices[new_label_index];
 
-            println!("checkpoint 4");
             if blue_labels[bb] > total_blue_degrees.len() as f64 {
                 total_blue_degrees[blue_labels[bb] as usize] = 0.0;
             }
 
             // Update total marginals on new labelling
-            println!("checkpoint 5");
             total_blue_degrees[blue_labels[bb] as usize] =
                 total_blue_degrees[blue_labels[bb] as usize] + col_marginals[bb]
         }
@@ -594,9 +636,9 @@ fn local_maximisation(
         // turn back to array
         let red_label_choices = Array::from(red_label_choices_vec);
 
-        println!("checkpoint 6");
-        for aa in 0..red_labels.len() - 1 {
-            total_red_degrees[red_labels[aa] as usize] -= row_marginals[aa];
+        for aa in 0..red_labels.len() {
+            total_red_degrees[red_labels[aa] as usize] =
+                total_red_degrees[red_labels[aa] as usize] - row_marginals[aa];
 
             let mut change_red_label_test: Array1<f64> = Array1::zeros(red_label_choices.len());
             change_red_label_test.fill(NAN);
@@ -636,7 +678,6 @@ fn local_maximisation(
                 }
             }
             // generate the new label index
-            println!("checkpoint 7");
             let new_label_index = *labels.choose(&mut rand::thread_rng()).unwrap_or(&0);
             red_labels[aa] = red_label_choices[new_label_index];
 
@@ -644,13 +685,26 @@ fn local_maximisation(
                 total_red_degrees[red_labels[aa] as usize] = 0.0;
             }
 
-            println!("checkpoint 8");
             // Update total marginals on new labelling
             total_red_degrees[red_labels[aa] as usize] =
                 total_red_degrees[red_labels[aa] as usize] + row_marginals[aa]
         }
 
+        println!(
+            "Total blue degrees for inner iteration: {} = {:?}",
+            iteration_counter, total_blue_degrees
+        );
+        println!(
+            "Total red degrees for inner iteration: {} = {:?}",
+            iteration_counter, total_red_degrees
+        );
+
         qb_after = weighted_modularity(&b_matrix, mat_sum, &red_labels, &blue_labels);
+
+        println!(
+            "QB after for inner iteration: {} = {}",
+            iteration_counter, qb_after
+        );
 
         if qb_after <= qb_before {
             *red_labels = old_red_labels;
@@ -659,6 +713,8 @@ fn local_maximisation(
             total_blue_degrees = old_tbd;
             iterate_flag = false;
         }
+
+        iteration_counter += 1;
     }
 
     let qb_now = qb_after;
