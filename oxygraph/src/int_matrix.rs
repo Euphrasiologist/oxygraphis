@@ -25,6 +25,8 @@ pub type Matrix = Array2<f64>;
 
 /// A matrix wrapper of ndarray plus some labels
 /// for ease.
+
+#[derive(Clone)]
 pub struct InteractionMatrix {
     pub inner: Matrix,
     pub rownames: Vec<String>,

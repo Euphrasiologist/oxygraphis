@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{arg, value_parser, ArgMatches, Command};
+use clap::{arg, crate_version, value_parser, ArgMatches, Command};
 use oxygraph::{BipartiteGraph, DerivedGraphs, InteractionMatrix, LpaWbPlus};
 use std::path::PathBuf;
 
@@ -10,6 +10,8 @@ pub fn cli() -> Command<'static> {
     Command::new("oxygraphis")
         .bin_name("oxygraphis")
         .arg_required_else_help(true)
+        .version(crate_version!())
+        .author("Max Brown <euphrasiamax@gmail.com>")
         .subcommand(
             Command::new("bipartite")
                 .about("Generate and analyse bipartite graphs.")
@@ -73,6 +75,14 @@ pub fn cli() -> Command<'static> {
                 )
                 .subcommand(Command::new("modularity")
                     .about("Derive the modularity of a bipartite graph.")
+                    .arg(
+                        arg!(-l --lpawbplus "Compute the modularity of a bipartite network using LPAwb+ algorithm.")
+                            .action(clap::ArgAction::SetTrue)
+                    )
+                    .arg(
+                        arg!(-p --plotmod "Plot the interaction matrix of a bipartite network, sorted to maximise modularity.")
+                            .action(clap::ArgAction::SetTrue)
+                    )
                 )
                 .subcommand(Command::new("simulate")
                     .about("Simulate a number of graphs, and return calculations over the samples.")
@@ -280,12 +290,26 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         println!("{}", s);
                     }
                 }
-                Some(("modularity", _mod_matches)) => {
+                Some(("modularity", mod_matches)) => {
+                    let lpawbplus = *mod_matches
+                        .get_one::<bool>("lpawbplus")
+                        .expect("defaulted by clap.");
+                    let plot = *mod_matches
+                        .get_one::<bool>("plotmod")
+                        .expect("defaulted by clap.");
+
                     // create the interaction matrix
-                    let int_mat = InteractionMatrix::from_bipartite(bpgraph);
-                    // call the only algorithm we currently implement.
-                    let LpaWbPlus { modularity, .. } = oxygraph::modularity::lba_wb_plus(int_mat);
-                    println!("Modularity using LPAwb+: {}", modularity);
+                    let mut int_mat = InteractionMatrix::from_bipartite(bpgraph);
+
+                    if plot {
+                        let modularity_obj = oxygraph::modularity::lba_wb_plus(int_mat.clone());
+                        modularity_obj.plot(int_mat);
+                    } else {
+                        // call the only algorithm we currently implement.
+                        let LpaWbPlus { modularity, .. } =
+                            oxygraph::modularity::lba_wb_plus(int_mat);
+                        println!("Modularity using LPAwb+: {}", modularity);
+                    }
                 }
                 _ => unreachable!("Should never reach here."),
             }

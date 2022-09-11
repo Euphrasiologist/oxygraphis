@@ -6,13 +6,15 @@
 //! It's pretty much a direct translation, as I wanted to ensure correctness
 //! over rustiness.
 
-use crate::InteractionMatrix;
+use crate::{sort::*, InteractionMatrix};
 use core::f64::NAN;
-use ndarray::{Array, Array1, Array2, ArrayBase, Dim, OwnedRepr};
+use ndarray::{Array, Array1, Array2, ArrayBase, Axis, Dim, OwnedRepr};
 use rand::seq::SliceRandom;
 use std::collections::HashSet;
 
 // Will need an error type for this module in the future.
+// TODO:
+// Implement DIRT_LPA_wb_plus
 
 /// A struct just to hold the data from the output of the modularity
 /// computation.
@@ -20,6 +22,48 @@ pub struct LpaWbPlus {
     pub row_labels: Vec<usize>,
     pub column_labels: Vec<usize>,
     pub modularity: f64,
+}
+
+impl LpaWbPlus {
+    /// Generate a plot.
+    ///
+    /// `int_mat` is the original interaction matrix used to
+    /// generate the `LpaWbPlus` object
+    pub fn plot(&self, mut int_mat: InteractionMatrix) {
+        // get the permutation order of the rows
+        let array_from_row: Array1<usize> = Array::from(self.row_labels.clone());
+        let array_from_row_permutation =
+            array_from_row.sort_axis_by(Axis(0), |i, j| array_from_row[i] > array_from_row[j]);
+        // and the columns
+        let array_from_col: Array1<usize> = Array::from(self.column_labels.clone());
+        let array_from_col_permutation =
+            array_from_col.sort_axis_by(Axis(0), |i, j| array_from_col[i] > array_from_col[j]);
+
+        // sort the rows/cols
+        let rows = array_from_row
+            .clone()
+            .permute_axis(Axis(0), &array_from_row_permutation);
+        let cols = array_from_col
+            .clone()
+            .permute_axis(Axis(0), &array_from_col_permutation);
+
+        // find the number of modules
+        let mut uniq_rows = rows.into_raw_vec();
+        uniq_rows.sort();
+        uniq_rows.dedup();
+        let mod_no = uniq_rows.len();
+
+        // sort the original interaction matrix
+
+        int_mat.inner = int_mat
+            .inner
+            .permute_axis(Axis(0), &array_from_row_permutation);
+        int_mat.inner = int_mat
+            .inner
+            .permute_axis(Axis(1), &array_from_col_permutation);
+
+        int_mat.plot(600);
+    }
 }
 
 /// Label propagation algorithm for weighted bipartite networks that finds modularity.
