@@ -3,6 +3,7 @@
 //! possible combinations of hosts/parasites (or sites/species).
 
 use crate::bipartite::BipartiteGraph;
+use crate::modularity::PlotData;
 use crate::sort::*;
 use crate::MARGIN_LR;
 use itertools::Itertools;
@@ -128,13 +129,13 @@ impl InteractionMatrix {
     ///
     /// TODO: sort out the height on this
     /// and maybe labels.
-    pub fn plot(&self, width: i32) {
+    pub fn plot(&self, width: i32, modularity_plot_data: Option<PlotData>) {
         // space on the x axis and y axis
         let x_spacing = (width as f64 - (MARGIN_LR * 2.0)) / self.colnames.len() as f64;
-        let y_spacing = x_spacing; //(height as f64 - (MARGIN_LR * 2.0)) / self.rownames.len() as f64;
+        let y_spacing = x_spacing;
 
         // we want to make as many circles in a row as there are rownames
-        let mut assoc_circles = String::new();
+        let mut svg_data = String::new();
 
         for parasite in 0..self.rownames.len() {
             for host in 0..self.colnames.len() {
@@ -142,11 +143,68 @@ impl InteractionMatrix {
                 let col = if is_assoc { "black" } else { "white" };
                 let x = (x_spacing * host as f64) + (x_spacing / 2.0) + MARGIN_LR;
                 let y = (y_spacing * parasite as f64) + (y_spacing / 2.0) + MARGIN_LR;
-                assoc_circles += &format!(
+                svg_data += &format!(
                     "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" stroke=\"black\"><title>{}</title></circle>\n",
                     x, y, (x_spacing / 2.0), col, &format!("{} x {}", self.rownames[parasite], self.colnames[host])
                 );
             }
+        }
+
+        // if we have a modularity plot
+        match modularity_plot_data {
+            Some(rects) => {
+                let PlotData {
+                    rows,
+                    cols,
+                    modules,
+                } = rects;
+
+                let mut cumulative_col_size = 0;
+                let mut cumulative_row_size = 0;
+
+                for module in 0..modules.len() {
+                    // get this row size and the previous row size information
+                    let row_size = rows.iter().filter(|e| **e == modules[module]).count();
+                    let prev_row_size = rows
+                        .iter()
+                        .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                        .count();
+                    // and the same for the columns
+                    let col_size = cols.iter().filter(|e| **e == modules[module]).count();
+                    let prev_col_size = cols
+                        .iter()
+                        .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                        .count();
+                    eprintln!(
+                        "Row size: {:?}; prev row size: {:?}",
+                        row_size, prev_row_size
+                    );
+                    eprintln!(
+                        "Col size: {:?}; prev col size: {:?}",
+                        col_size, prev_col_size
+                    );
+                    eprintln!("Module: {:?}", module);
+
+                    if module > 0 {
+                        cumulative_col_size += prev_col_size;
+                        cumulative_row_size += prev_row_size;
+                    }
+                    eprintln!("Cumulative col size: {:?}", cumulative_col_size);
+
+                    let rect_width = col_size as f64 * x_spacing;
+                    let rect_height = row_size as f64 * y_spacing;
+
+                    let translate = format!(
+                        "translate({} {})",
+                        (cumulative_col_size as f64 * x_spacing) + MARGIN_LR,
+                        (cumulative_row_size as f64 * y_spacing) + MARGIN_LR
+                    );
+
+                    svg_data += &format!("<rect x=\"0\" y=\"0\" width=\"{rect_width}\" height=\"{rect_height}\" style=\"fill: none; stroke: red; stroke-width: 2px;\" transform=\"{translate}\"/>");
+                }
+            }
+            // it's just the ol' interaction matrix!
+            None => (),
         }
 
         let svg = format!(
@@ -158,7 +216,7 @@ impl InteractionMatrix {
         "#,
             width,
             (MARGIN_LR * 2.0) + (y_spacing * self.rownames.len() as f64),
-            assoc_circles
+            svg_data
         );
 
         println!("{}", svg);

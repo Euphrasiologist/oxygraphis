@@ -8,7 +8,7 @@
 
 use crate::{sort::*, InteractionMatrix};
 use core::f64::NAN;
-use ndarray::{Array, Array1, Array2, ArrayBase, Axis, Dim, OwnedRepr};
+use ndarray::{Array, Array1, Array2, ArrayBase, Axis, Dim, OwnedRepr, ViewRepr};
 use rand::seq::SliceRandom;
 use std::collections::HashSet;
 
@@ -24,6 +24,12 @@ pub struct LpaWbPlus {
     pub modularity: f64,
 }
 
+pub struct PlotData<'a> {
+    pub rows: ArrayBase<ViewRepr<&'a usize>, Dim<[usize; 1]>>,
+    pub cols: ArrayBase<ViewRepr<&'a usize>, Dim<[usize; 1]>>,
+    pub modules: Vec<usize>,
+}
+
 impl LpaWbPlus {
     /// Generate a plot.
     ///
@@ -33,11 +39,12 @@ impl LpaWbPlus {
         // get the permutation order of the rows
         let array_from_row: Array1<usize> = Array::from(self.row_labels.clone());
         let array_from_row_permutation =
-            array_from_row.sort_axis_by(Axis(0), |i, j| array_from_row[i] > array_from_row[j]);
+            array_from_row.sort_axis_by(Axis(0), |i, j| array_from_row[i] < array_from_row[j]);
+
         // and the columns
         let array_from_col: Array1<usize> = Array::from(self.column_labels.clone());
         let array_from_col_permutation =
-            array_from_col.sort_axis_by(Axis(0), |i, j| array_from_col[i] > array_from_col[j]);
+            array_from_col.sort_axis_by(Axis(0), |i, j| array_from_col[i] < array_from_col[j]);
 
         // sort the rows/cols
         let rows = array_from_row
@@ -48,10 +55,9 @@ impl LpaWbPlus {
             .permute_axis(Axis(0), &array_from_col_permutation);
 
         // find the number of modules
-        let mut uniq_rows = rows.into_raw_vec();
+        let mut uniq_rows = rows.clone().into_raw_vec();
         uniq_rows.sort();
         uniq_rows.dedup();
-        let mod_no = uniq_rows.len();
 
         // sort the original interaction matrix
 
@@ -62,7 +68,18 @@ impl LpaWbPlus {
             .inner
             .permute_axis(Axis(1), &array_from_col_permutation);
 
-        int_mat.plot(600);
+        // view so we don't have to clone the thing
+        let rows_view = rows.view();
+        let cols_view = cols.view();
+
+        int_mat.plot(
+            1000,
+            Some(PlotData {
+                rows: rows_view,
+                cols: cols_view,
+                modules: uniq_rows,
+            }),
+        );
     }
 }
 
@@ -516,7 +533,7 @@ fn local_maximisation(
 
     // turn this to false once we have optimised.
     let mut iterate_flag = true;
-    let mut iteration_counter = 1;
+    let mut _iteration_counter = 1;
 
     while iterate_flag {
         // Save old information
@@ -676,7 +693,7 @@ fn local_maximisation(
             iterate_flag = false;
         }
 
-        iteration_counter += 1;
+        _iteration_counter += 1;
     }
 
     let qb_now = qb_after;

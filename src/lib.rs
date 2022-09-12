@@ -191,7 +191,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         // change these, especially height might need to
                         // be auto generated
                         im_mat.sort();
-                        im_mat.plot(1600);
+                        im_mat.plot(1600, None);
                     } else if nodf {
                         // sort and make nodf.
                         im_mat.sort();
@@ -291,7 +291,8 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     }
                 }
                 Some(("modularity", mod_matches)) => {
-                    let lpawbplus = *mod_matches
+                    // this will probably be used later. Currently not!
+                    let _lpawbplus = *mod_matches
                         .get_one::<bool>("lpawbplus")
                         .expect("defaulted by clap.");
                     let plot = *mod_matches
@@ -299,7 +300,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         .expect("defaulted by clap.");
 
                     // create the interaction matrix
-                    let mut int_mat = InteractionMatrix::from_bipartite(bpgraph);
+                    let int_mat = InteractionMatrix::from_bipartite(bpgraph);
 
                     if plot {
                         let modularity_obj = oxygraph::modularity::lba_wb_plus(int_mat.clone());
