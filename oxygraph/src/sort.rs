@@ -29,9 +29,7 @@ pub fn sort_by_indices<T>(data: &mut [T], mut indices: Vec<usize>) {
     }
 }
 
-/// Hold the indices of a permutation.
-///
-/// Type invariant: Each index appears exactly once.
+// Type invariant: Each index appears exactly once
 #[derive(Clone, Debug)]
 pub struct Permutation {
     pub indices: Vec<usize>,
@@ -48,15 +46,20 @@ impl Permutation {
         }
     }
 
-    /// Inner function to check correctness of the permutation.
     fn correct(&self) -> bool {
         let axis_len = self.indices.len();
         let mut seen = vec![false; axis_len];
         for &i in &self.indices {
-            if seen[i] {
-                return false;
+            match seen.get_mut(i) {
+                None => return false,
+                Some(s) => {
+                    if *s {
+                        return false;
+                    } else {
+                        *s = true;
+                    }
+                }
             }
-            seen[i] = true;
         }
         true
     }
@@ -124,25 +127,90 @@ where
         assert_eq!(axis_len, perm.indices.len());
         debug_assert!(perm.correct());
 
-        let mut v = Vec::with_capacity(self.len());
-        let mut result;
+        if self.is_empty() {
+            return self;
+        }
 
-        // panic-critical begin: we must not panic
+        let mut result = Array::uninit(self.dim());
+
         unsafe {
-            v.set_len(self.len());
-            result = Array::from_shape_vec_unchecked(self.dim(), v);
-            for i in 0..axis_len {
-                let perm_i = perm.indices[i];
-                Zip::from(result.index_axis_mut(axis, perm_i))
-                    .and(self.index_axis(axis, i))
-                    .for_each(|to, from| copy_nonoverlapping(from, to, 1));
-            }
+            // logically move ownership of all elements from self into result
+            // the result realizes this ownership at .assume_init() further down
+            let mut moved_elements = 0;
+            Zip::from(&perm.indices)
+                .and(result.axis_iter_mut(axis))
+                .for_each(|&perm_i, result_pane| {
+                    // possible improvement: use unchecked indexing for `index_axis`
+                    Zip::from(result_pane)
+                        .and(self.index_axis(axis, perm_i))
+                        .for_each(|to, from| {
+                            copy_nonoverlapping(from, to.as_mut_ptr(), 1);
+                            moved_elements += 1;
+                        });
+                });
+            debug_assert_eq!(result.len(), moved_elements);
+            // panic-critical begin: we must not panic
             // forget moved array elements but not its vec
+            // old_storage drops empty
             let mut old_storage = self.into_raw_vec();
             old_storage.set_len(0);
-            // old_storage drops empty
+
+            result.assume_init()
+            // panic-critical end
         }
-        // panic-critical end
-        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_permute_axis() {
+        let a = array![
+            [107998.96, 1.],
+            [107999.08, 2.],
+            [107999.20, 3.],
+            [108000.33, 4.],
+            [107999.45, 5.],
+            [107999.57, 6.],
+            [108010.69, 7.],
+            [107999.81, 8.],
+            [107999.94, 9.],
+            [75600.09, 10.],
+            [75600.21, 11.],
+            [75601.33, 12.],
+            [75600.45, 13.],
+            [75600.58, 14.],
+            [109000.70, 15.],
+            [75600.82, 16.],
+            [75600.94, 17.],
+            [75601.06, 18.],
+        ];
+
+        let perm = a.sort_axis_by(Axis(0), |i, j| a[[i, 0]] < a[[j, 0]]);
+        let b = a.permute_axis(Axis(0), &perm);
+        assert_eq!(
+            b,
+            array![
+                [75600.09, 10.],
+                [75600.21, 11.],
+                [75600.45, 13.],
+                [75600.58, 14.],
+                [75600.82, 16.],
+                [75600.94, 17.],
+                [75601.06, 18.],
+                [75601.33, 12.],
+                [107998.96, 1.],
+                [107999.08, 2.],
+                [107999.20, 3.],
+                [107999.45, 5.],
+                [107999.57, 6.],
+                [107999.81, 8.],
+                [107999.94, 9.],
+                [108000.33, 4.],
+                [108010.69, 7.],
+                [109000.70, 15.],
+            ]
+        );
     }
 }
