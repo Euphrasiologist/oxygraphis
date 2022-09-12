@@ -129,6 +129,7 @@ impl DerivedGraph {
         println!("{}", svg);
     }
 }
+
 /// DerivedGraph will be a wrapper over `petgraph`'s
 /// `UnGraph`.
 ///
@@ -139,9 +140,19 @@ pub struct DerivedGraphs {
     pub hosts: DerivedGraph,
 }
 
+/// So we can label the stats.
+pub struct DerivedGraphStats {
+    pub parasite_nodes: usize,
+    pub parasite_edges: usize,
+    pub parasite_edges_filtered: usize,
+    pub host_nodes: usize,
+    pub host_edges: usize,
+    pub host_edges_filtered: usize,
+}
+
 impl DerivedGraphs {
     /// Some basic statistics about the graphs.
-    pub fn stats(&self) -> (usize, usize, usize, usize, usize, usize) {
+    pub fn stats(&self) -> DerivedGraphStats {
         let parasites = &self.parasites.0;
         let hosts = &self.hosts.0;
 
@@ -161,14 +172,14 @@ impl DerivedGraphs {
             .filter(|e| *e.weight() > 1)
             .collect();
         // TODO: better return type.
-        (
-            p_nodes,
-            p_edges,
-            p_edge_fil.len(),
-            h_nodes,
-            h_edges,
-            h_edge_fil.len(),
-        )
+        DerivedGraphStats {
+            parasite_nodes: p_nodes,
+            parasite_edges: p_edges,
+            parasite_edges_filtered: p_edge_fil.len(),
+            host_nodes: h_nodes,
+            host_edges: h_edges,
+            host_edges_filtered: h_edge_fil.len(),
+        }
     }
 
     pub fn from_bipartite(bpgraph: BipartiteGraph) -> Self {

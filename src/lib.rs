@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{arg, crate_version, value_parser, ArgMatches, Command};
-use oxygraph::{BipartiteGraph, DerivedGraphs, InteractionMatrix, LpaWbPlus};
+use oxygraph::{BipartiteGraph, DerivedGraphStats, DerivedGraphs, InteractionMatrix, LpaWbPlus};
 use std::path::PathBuf;
 
 /// Create the CLI in clap.
@@ -227,13 +227,24 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             _ => unreachable!("Should never reach here."),
                         }
                     } else {
-                        let (p_nodes, p_edges, p_edge_fil, h_nodes, h_edges, h_edge_fil) =
-                            dgs.stats();
+                        let DerivedGraphStats {
+                            parasite_nodes,
+                            parasite_edges,
+                            parasite_edges_filtered,
+                            host_nodes,
+                            host_edges,
+                            host_edges_filtered,
+                        } = dgs.stats();
 
                         println!("p_nodes\tp_edges\tp_edge_fil\th_nodes\th_edges\th_edge_fil");
                         println!(
                             "{}\t{}\t{}\t{}\t{}\t{}",
-                            p_nodes, p_edges, p_edge_fil, h_nodes, h_edges, h_edge_fil
+                            parasite_nodes,
+                            parasite_edges,
+                            parasite_edges_filtered,
+                            host_nodes,
+                            host_edges,
+                            host_edges_filtered
                         );
                     }
                 }

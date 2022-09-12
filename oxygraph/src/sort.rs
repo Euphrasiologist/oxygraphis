@@ -29,7 +29,7 @@ pub fn sort_by_indices<T>(data: &mut [T], mut indices: Vec<usize>) {
     }
 }
 
-// Type invariant: Each index appears exactly once
+/// Type invariant: Each index appears exactly once
 #[derive(Clone, Debug)]
 pub struct Permutation {
     pub indices: Vec<usize>,
@@ -46,6 +46,7 @@ impl Permutation {
         }
     }
 
+    /// Not sure what this does.
     fn correct(&self) -> bool {
         let axis_len = self.indices.len();
         let mut seen = vec![false; axis_len];

@@ -24,6 +24,9 @@ pub struct LpaWbPlus {
     pub modularity: f64,
 }
 
+/// To plot the modules on an interaction plot, these three
+/// pieces of data must be known. The rows, columns, and
+/// the vector of modules.
 pub struct PlotData<'a> {
     pub rows: ArrayBase<ViewRepr<&'a usize>, Dim<[usize; 1]>>,
     pub cols: ArrayBase<ViewRepr<&'a usize>, Dim<[usize; 1]>>,
@@ -89,7 +92,7 @@ impl LpaWbPlus {
 /// Translated from the R code here with permission from the author:
 /// Stephen Beckett ( https://github.com/sjbeckett/weighted-modularity-LPAwbPLUS )
 ///
-/// No initial module guess to start with.
+/// TODO: No initial module guess to start with.
 pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> LpaWbPlus {
     // Make sure the smallest matrix dimension represent the red labels by making
     // them the rows (if matrix is transposed here, will be transposed back at the end)
@@ -171,12 +174,12 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> LpaWbPlus {
     }
 }
 
-/// Returns the sum of the diagonal of a 2D Array<f64>
+/// Returns the sum of the diagonal of a 2D Array<f64>.
 fn trace(matrix: ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>) -> f64 {
     matrix.diag().sum()
 }
 
-/// Weighted modularity computation
+/// Weighted modularity computation.
 fn weighted_modularity(
     b_matrix: &ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>,
     mat_sum: f64,
@@ -355,6 +358,7 @@ fn division(red_labels: &mut Array1<f64>, blue_labels: &mut Array1<f64>) -> Vec<
         .collect()
 }
 
+/// Stage two of the LPAwbplus algorithm.
 fn stage_two_lpa_wbdash(
     row_marginals: ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,
     col_marginals: ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>>,

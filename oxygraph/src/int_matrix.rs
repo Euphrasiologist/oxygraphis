@@ -26,7 +26,6 @@ pub type Matrix = Array2<f64>;
 
 /// A matrix wrapper of ndarray plus some labels
 /// for ease.
-
 #[derive(Clone)]
 pub struct InteractionMatrix {
     pub inner: Matrix,
@@ -125,10 +124,7 @@ impl InteractionMatrix {
         int_max
     }
 
-    /// Make an SVG interaction matrix plot
-    ///
-    /// TODO: sort out the height on this
-    /// and maybe labels.
+    /// Make an SVG interaction matrix plot. Prints to STDOUT.
     pub fn plot(&self, width: i32, modularity_plot_data: Option<PlotData>) {
         // space on the x axis and y axis
         let x_spacing = (width as f64 - (MARGIN_LR * 2.0)) / self.colnames.len() as f64;
@@ -153,15 +149,18 @@ impl InteractionMatrix {
         // if we have a modularity plot
         match modularity_plot_data {
             Some(rects) => {
+                // destructure the plot data
                 let PlotData {
                     rows,
                     cols,
                     modules,
                 } = rects;
 
+                // keep track of cumulative column & row sizes
                 let mut cumulative_col_size = 0;
                 let mut cumulative_row_size = 0;
 
+                // iterate over the modules
                 for module in 0..modules.len() {
                     // get this row size and the previous row size information
                     let row_size = rows.iter().filter(|e| **e == modules[module]).count();
@@ -175,31 +174,28 @@ impl InteractionMatrix {
                         .iter()
                         .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
                         .count();
-                    eprintln!(
-                        "Row size: {:?}; prev row size: {:?}",
-                        row_size, prev_row_size
-                    );
-                    eprintln!(
-                        "Col size: {:?}; prev col size: {:?}",
-                        col_size, prev_col_size
-                    );
-                    eprintln!("Module: {:?}", module);
 
+                    // as a by-product of the unwrap_or() on the .get() function above,
+                    // skip the first iteration in the cumulative sums.
                     if module > 0 {
                         cumulative_col_size += prev_col_size;
                         cumulative_row_size += prev_row_size;
                     }
-                    eprintln!("Cumulative col size: {:?}", cumulative_col_size);
 
+                    // rect height and widths are multiples of the column and the
+                    // row lengths.
                     let rect_width = col_size as f64 * x_spacing;
                     let rect_height = row_size as f64 * y_spacing;
 
+                    // we then need to translate the rects the appropriate
+                    // amount, offset by the cumulative column and row sizes.
                     let translate = format!(
                         "translate({} {})",
                         (cumulative_col_size as f64 * x_spacing) + MARGIN_LR,
                         (cumulative_row_size as f64 * y_spacing) + MARGIN_LR
                     );
 
+                    // append to the SVG data.
                     svg_data += &format!("<rect x=\"0\" y=\"0\" width=\"{rect_width}\" height=\"{rect_height}\" style=\"fill: none; stroke: red; stroke-width: 2px;\" transform=\"{translate}\"/>");
                 }
             }
@@ -308,9 +304,6 @@ impl InteractionMatrix {
 
         Ok(mean)
     }
-
-    // implement some simple matrix calculations here.
-    // using f64 as a return type when I can.
 
     /// Sum of an interaction matrix. Should be equal to the number of
     /// edges in an unweighted graph.

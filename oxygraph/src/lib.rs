@@ -16,9 +16,11 @@ pub use int_matrix::InteractionMatrix;
 /// shared connections are between two nodes in that stratum.
 pub mod derived;
 pub use derived::DerivedGraphs;
+pub use derived::DerivedGraphStats;
 
 /// Modularity calculations are in their own module, but they
-/// are built on top of an interaction matrix.
+/// are built on top of an interaction matrix. Included is only
+/// a single calculation of modularity, LPAwb+ from Beckett 2016.
 pub mod modularity;
 pub use modularity::LpaWbPlus;
 
