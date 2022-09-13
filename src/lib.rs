@@ -144,6 +144,20 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
             // and must currently go through a DSV.
             let bpgraph = BipartiteGraph::from_dsv(input, delimiter)?;
 
+            match bpgraph.is_bipartite() {
+                // don't care here
+                oxygraph::bipartite::Strata::Yes(_) => (),
+                // tell the user which nodes are the offenders.
+                oxygraph::bipartite::Strata::No(_, offending_nodes) => {
+                    let mut of_string = String::new();
+                    for (_, node) in offending_nodes {
+                        of_string += &format!("{},", node);
+                    }
+                    of_string.pop();
+                    println!("Nodes causing graph to not be bipartite: {}", of_string);
+                }
+            }
+
             match sub_matches.subcommand() {
                 // user just called bipartite
                 None => {

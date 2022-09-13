@@ -54,6 +54,17 @@ pub type Fitness = f64;
 /// such things.
 pub struct BipartiteGraph(pub Graph<Species, Fitness>);
 
+/// This enum might replace `get_parasite_host_from_graph`.
+/// As it should display the same information.
+pub enum Strata {
+    /// If there are strata present, return these
+    /// as a map of node indices &
+    Yes(HashMap<NodeIndex, bool>),
+    /// There weren't any strata. This isn't a
+    /// bipartite graph! And what are the offending nodes?
+    No(HashMap<NodeIndex, bool>, Vec<(NodeIndex, String)>),
+}
+
 /// TODO:
 /// Would be nice to have some methods to add
 /// nodes, edges, and the weights to a graph
@@ -61,7 +72,66 @@ pub struct BipartiteGraph(pub Graph<Species, Fitness>);
 ///
 /// This means we would also be able to do things
 /// like BipartiteGraph::create_random(<no_nodes>, <no_edges>)...
+///
+/// TODO: check that input graph is bipartite?
+///
 impl BipartiteGraph {
+    /// Check that a data set passed to `oxygraph` is actually
+    /// bipartite in nature.
+    pub fn is_bipartite(&self) -> Strata {
+        // create a map to store the colours
+        let mut colour_map: HashMap<NodeIndex, bool> = HashMap::new();
+        // store offending nodes.
+        let mut offending_nodes = Vec::new();
+
+        // iterate over all the nodes
+        // ignoring the weights.
+        for (node, _) in self.0.node_references() {
+            // does the map contain the node?
+            let contains_node = colour_map.contains_key(&node);
+            // now get the neighbours of this node.
+            let neighbours: Vec<NodeIndex> = self.0.neighbors_undirected(node).collect();
+            let no_neighbours = neighbours.len();
+
+            if contains_node {
+                continue;
+            }
+
+            if no_neighbours == 0 {
+                // colour isolated nodes as false.
+                colour_map.insert(node, false);
+                continue;
+            }
+
+            // make a queue
+            let mut queue = vec![node];
+            colour_map.insert(node, true);
+
+            while queue.len() > 0 {
+                let v = queue.pop().unwrap();
+                let c = !colour_map.get(&v).unwrap();
+                for w in &neighbours {
+                    let contains_node_inner = colour_map.contains_key(w);
+                    if contains_node_inner {
+                        if colour_map.get(w).unwrap() == colour_map.get(&v).unwrap() {
+                            offending_nodes.push((*w, self.0[*w].clone()));
+                        }
+                    } else {
+                        colour_map.insert(*w, c);
+                        queue.push(*w);
+                    }
+                }
+            }
+        }
+        if offending_nodes.len() > 0 {
+            // otherwise we get double the vector size.
+            offending_nodes.sort();
+            offending_nodes.dedup();
+            Strata::No(colour_map, offending_nodes)
+        } else {
+            Strata::Yes(colour_map)
+        }
+    }
     /// Generate a set of random bipartite graphs with specified
     /// numbers of nodes in each stratum, and edges between the strata.
     ///
