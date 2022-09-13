@@ -62,7 +62,7 @@ pub enum Strata {
     Yes(HashMap<NodeIndex, bool>),
     /// There weren't any strata. This isn't a
     /// bipartite graph! And what are the offending nodes?
-    No(HashMap<NodeIndex, bool>, Vec<(NodeIndex, String)>),
+    No,
 }
 
 /// TODO:
@@ -81,9 +81,6 @@ impl BipartiteGraph {
     pub fn is_bipartite(&self) -> Strata {
         // create a map to store the colours
         let mut colour_map: HashMap<NodeIndex, bool> = HashMap::new();
-        // store offending nodes.
-        let mut offending_nodes = Vec::new();
-
         // iterate over all the nodes
         // ignoring the weights.
         for (node, _) in self.0.node_references() {
@@ -93,13 +90,7 @@ impl BipartiteGraph {
             let neighbours: Vec<NodeIndex> = self.0.neighbors_undirected(node).collect();
             let no_neighbours = neighbours.len();
 
-            if contains_node {
-                continue;
-            }
-
-            if no_neighbours == 0 {
-                // colour isolated nodes as false.
-                colour_map.insert(node, false);
+            if contains_node || no_neighbours == 0 {
                 continue;
             }
 
@@ -110,11 +101,12 @@ impl BipartiteGraph {
             while queue.len() > 0 {
                 let v = queue.pop().unwrap();
                 let c = !colour_map.get(&v).unwrap();
-                for w in &neighbours {
+                let inner_neighbours: Vec<NodeIndex> = self.0.neighbors_undirected(v).collect();
+                for w in &inner_neighbours {
                     let contains_node_inner = colour_map.contains_key(w);
                     if contains_node_inner {
                         if colour_map.get(w).unwrap() == colour_map.get(&v).unwrap() {
-                            offending_nodes.push((*w, self.0[*w].clone()));
+                            return Strata::No;
                         }
                     } else {
                         colour_map.insert(*w, c);
@@ -123,14 +115,8 @@ impl BipartiteGraph {
                 }
             }
         }
-        if offending_nodes.len() > 0 {
-            // otherwise we get double the vector size.
-            offending_nodes.sort();
-            offending_nodes.dedup();
-            Strata::No(colour_map, offending_nodes)
-        } else {
-            Strata::Yes(colour_map)
-        }
+
+        Strata::Yes(colour_map)
     }
     /// Generate a set of random bipartite graphs with specified
     /// numbers of nodes in each stratum, and edges between the strata.
