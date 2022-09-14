@@ -78,6 +78,12 @@ pub fn cli() -> Command<'static> {
                     .arg(
                         arg!(-l --lpawbplus "Compute the modularity of a bipartite network using LPAwb+ algorithm.")
                             .action(clap::ArgAction::SetTrue)
+                            .conflicts_with("dirtlpawbplus")
+                    )
+                    .arg(
+                        arg!(-d --dirtlpawbplus "Compute the modularity of a bipartite network using DIRTLPAwb+ algorithm.")
+                            .action(clap::ArgAction::SetTrue)
+                            .conflicts_with("lpawbplus")
                     )
                     .arg(
                         arg!(-p --plotmod "Plot the interaction matrix of a bipartite network, sorted to maximise modularity.")
@@ -294,7 +300,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             "lpawbplus" => {
                                 let im_mat = InteractionMatrix::from_bipartite(rand_graph);
                                 let LpaWbPlus { modularity, .. } =
-                                    oxygraph::modularity::lba_wb_plus(im_mat);
+                                    oxygraph::modularity::lpa_wb_plus(im_mat, None);
                                 sim_vec.push(modularity);
                             }
                             "degree-distribution" => {
@@ -315,6 +321,9 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let _lpawbplus = *mod_matches
                         .get_one::<bool>("lpawbplus")
                         .expect("defaulted by clap.");
+                    let dirtlpawbplus = *mod_matches
+                        .get_one::<bool>("dirtlpawbplus")
+                        .expect("defaulted by clap.");
                     let plot = *mod_matches
                         .get_one::<bool>("plotmod")
                         .expect("defaulted by clap.");
@@ -323,12 +332,17 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let int_mat = InteractionMatrix::from_bipartite(bpgraph);
 
                     if plot {
-                        let modularity_obj = oxygraph::modularity::lba_wb_plus(int_mat.clone());
+                        let modularity_obj =
+                            oxygraph::modularity::lpa_wb_plus(int_mat.clone(), None);
                         modularity_obj.plot(int_mat);
-                    } else {
-                        // call the only algorithm we currently implement.
+                    } else if dirtlpawbplus {
+                        // probably let user input reps in future.
                         let LpaWbPlus { modularity, .. } =
-                            oxygraph::modularity::lba_wb_plus(int_mat);
+                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat, 4, 10);
+                        println!("Modularity using DIRTLPAwb+: {}", modularity);
+                    } else {
+                        let LpaWbPlus { modularity, .. } =
+                            oxygraph::modularity::lpa_wb_plus(int_mat, None);
                         println!("Modularity using LPAwb+: {}", modularity);
                     }
                 }

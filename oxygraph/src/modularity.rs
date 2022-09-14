@@ -9,12 +9,12 @@
 use crate::{sort::*, InteractionMatrix};
 use core::f64::NAN;
 use ndarray::{Array, Array1, Array2, ArrayBase, Axis, Dim, OwnedRepr, ViewRepr};
+use rand::distributions::Uniform;
 use rand::seq::SliceRandom;
+use rand::{thread_rng, Rng};
 use std::collections::HashSet;
 
 // Will need an error type for this module in the future.
-// TODO:
-// Implement DIRT_LPA_wb_plus
 
 /// A struct just to hold the data from the output of the modularity
 /// computation.
@@ -86,14 +86,41 @@ impl LpaWbPlus {
     }
 }
 
+/// The DIRTLPAwb+ algorithm.
+/// 
+/// It is a wrapper of the LPAwb+ algorithm, exploring
+/// more parameter space. Therefore for large graphs, will
+/// take a lot longer to run.
+pub fn dirt_lpa_wb_plus(matrix: InteractionMatrix, mini: usize, reps: usize) -> LpaWbPlus {
+    // initial modularity
+    let mut a = lpa_wb_plus(matrix.clone(), None);
+    // number of modules from this initial guess.
+    let mut modules = a.row_labels.clone();
+    modules.sort();
+    modules.dedup();
+    let module_no = modules.len();
+
+    // now optimise over a small parameter space.
+    if module_no - mini > 0 {
+        for aa in mini..=module_no {
+            for _ in 0..=reps {
+                let b = lpa_wb_plus(matrix.clone(), Some(aa));
+                if b.modularity > a.modularity {
+                    a = b;
+                }
+            }
+        }
+    }
+    a
+}
+
 /// Label propagation algorithm for weighted bipartite networks that finds modularity.
-/// Contains the LPAwb+ and the DIRTLPAwb+ algorithms
+///
+/// The LPAwb+ algorithm.
 ///
 /// Translated from the R code here with permission from the author:
 /// Stephen Beckett ( https://github.com/sjbeckett/weighted-modularity-LPAwbPLUS )
-///
-/// TODO: No initial module guess to start with.
-pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> LpaWbPlus {
+pub fn lpa_wb_plus(mut matrix: InteractionMatrix, init_module_guess: Option<usize>) -> LpaWbPlus {
     // Make sure the smallest matrix dimension represent the red labels by making
     // them the rows (if matrix is transposed here, will be transposed back at the end)
     let row_len = matrix.rownames.len();
@@ -115,7 +142,22 @@ pub fn lba_wb_plus(mut matrix: InteractionMatrix) -> LpaWbPlus {
     // columns are hosts, rows are parasites
     let mut blue_labels: Array1<f64> = Array1::zeros(col_len);
     blue_labels.fill(NAN);
-    let red_labels: Array1<f64> = Array::linspace(0.0, row_len as f64 - 1.0, row_len);
+
+    let red_labels: Array1<f64> = match init_module_guess {
+        Some(img) => {
+            let mut rng = thread_rng();
+            let uniform: Uniform<usize> = Uniform::new(0, img);
+
+            let mut collect_sample: Vec<f64> = Vec::new();
+
+            for _ in 0..row_len {
+                let rn = rng.sample(uniform);
+                collect_sample.push(rn as f64);
+            }
+            Array::from(collect_sample)
+        }
+        None => Array::linspace(0.0, row_len as f64 - 1.0, row_len),
+    };
 
     // Run phase 1
     let out_list = stage_one_lpa_wbdash(
@@ -719,7 +761,7 @@ mod test {
 
         int_mat.inner = arr2(&[[1.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
 
-        let LpaWbPlus { modularity, .. } = lba_wb_plus(int_mat);
+        let LpaWbPlus { modularity, .. } = lpa_wb_plus(int_mat, None);
 
         // kind of hacky way to test, but couldn't be bothered
         // to add another crate to test float equivalence.
