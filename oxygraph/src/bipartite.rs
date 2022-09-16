@@ -65,6 +65,14 @@ pub enum Strata {
     No,
 }
 
+/// A structure to hold the output of the
+/// bipartite graph statistics.
+pub struct BipartiteStats {
+    pub no_parasites: usize,
+    pub no_hosts: usize,
+    pub no_edges: usize,
+}
+
 /// TODO:
 /// Would be nice to have some methods to add
 /// nodes, edges, and the weights to a graph
@@ -172,7 +180,7 @@ impl BipartiteGraph {
         Ok(BipartiteGraph(graph))
     }
     /// Print some stats when the default subcommand is called.
-    pub fn stats(&self) -> (usize, usize, usize) {
+    pub fn stats(&self) -> BipartiteStats {
         let (parasites, hosts) = &self.get_parasite_host_from_graph();
 
         let no_parasites = parasites.len();
@@ -180,7 +188,11 @@ impl BipartiteGraph {
 
         let no_edges = &self.0.edge_count();
 
-        (no_parasites, no_hosts, *no_edges)
+        BipartiteStats {
+            no_parasites,
+            no_hosts,
+            no_edges: *no_edges,
+        }
     }
     /// Function to read into this graph struct from a DSV.
     ///

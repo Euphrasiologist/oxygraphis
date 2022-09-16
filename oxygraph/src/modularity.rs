@@ -87,11 +87,12 @@ impl LpaWbPlus {
 }
 
 /// The DIRTLPAwb+ algorithm.
-/// 
+///
 /// It is a wrapper of the LPAwb+ algorithm, exploring
 /// more parameter space. Therefore for large graphs, will
 /// take a lot longer to run.
 pub fn dirt_lpa_wb_plus(matrix: InteractionMatrix, mini: usize, reps: usize) -> LpaWbPlus {
+    eprintln!("oxygraph: initiating DIRTLPAwb+ algorithm");
     // initial modularity
     let mut a = lpa_wb_plus(matrix.clone(), None);
     // number of modules from this initial guess.
@@ -100,12 +101,23 @@ pub fn dirt_lpa_wb_plus(matrix: InteractionMatrix, mini: usize, reps: usize) -> 
     modules.dedup();
     let module_no = modules.len();
 
+    eprintln!("\tNumber of initial modules found: {}", module_no);
+
     // now optimise over a small parameter space.
     if module_no - mini > 0 {
         for aa in mini..=module_no {
-            for _ in 0..=reps {
+            for i in 0..=reps {
                 let b = lpa_wb_plus(matrix.clone(), Some(aa));
+                let mut inner_modules = b.row_labels.clone();
+                inner_modules.sort();
+                inner_modules.dedup();
+                let inner_module_no = inner_modules.len();
+
                 if b.modularity > a.modularity {
+                    eprintln!(
+                        "\tIteration: {}\n\tModules found: {}\n\tUpdated modularity: {}",
+                        i, inner_module_no, b.modularity
+                    );
                     a = b;
                 }
             }

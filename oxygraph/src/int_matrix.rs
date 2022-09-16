@@ -50,13 +50,33 @@ impl fmt::Display for InteractionMatrix {
     }
 }
 
+/// A structure to hold the interaction matrix
+/// statistics.
+pub struct InteractionMatrixStats {
+    /// Number of rows in the matrix
+    pub no_rows: usize,
+    /// Number of columns in the matrix
+    pub no_cols: usize,
+    /// Number of possible interactions.
+    pub no_poss_ints: usize,
+    /// Percentage of possible interactions seen.
+    pub perc_ints: f64,
+}
+
 impl InteractionMatrix {
     /// Some stats about the matrix
-    pub fn stats(&self) -> (usize, usize) {
+    pub fn stats(&self) -> InteractionMatrixStats {
         let no_rows = self.rownames.len();
         let no_cols = self.colnames.len();
+        let no_poss_ints = no_rows * no_cols;
+        let perc_ints = self.sum_matrix() / no_poss_ints as f64;
 
-        (no_rows, no_cols)
+        InteractionMatrixStats {
+            no_rows,
+            no_cols,
+            no_poss_ints,
+            perc_ints,
+        }
     }
     /// Initiate a new [`InteractionMatrix`]
     pub fn new(rn: usize, cn: usize) -> Self {
@@ -133,16 +153,37 @@ impl InteractionMatrix {
         // we want to make as many circles in a row as there are rownames
         let mut svg_data = String::new();
 
-        for parasite in 0..self.rownames.len() {
-            for host in 0..self.colnames.len() {
+        // lengths of the rows and columns
+        let parasites = self.rownames.len();
+        let hosts = self.colnames.len();
+        let grid_size = parasites * hosts;
+
+        for parasite in 0..parasites {
+            for host in 0..hosts {
                 let is_assoc = self.inner[[parasite, host]] == 1.0;
                 let col = if is_assoc { "black" } else { "white" };
                 let x = (x_spacing * host as f64) + (x_spacing / 2.0) + MARGIN_LR;
                 let y = (y_spacing * parasite as f64) + (y_spacing / 2.0) + MARGIN_LR;
-                svg_data += &format!(
-                    "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" stroke=\"black\"><title>{}</title></circle>\n",
-                    x, y, (x_spacing / 2.0), col, &format!("{} x {}", self.rownames[parasite], self.colnames[host])
-                );
+
+                // don't draw every circle if the grid has more than 500 circles
+                if grid_size > 500 {
+                    match is_assoc {
+                        true => {
+                            svg_data += &format!(
+                                "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" stroke=\"black\"><title>{}</title></circle>\n",
+                                x, y, (x_spacing / 2.0), col, &format!("{} x {}", self.rownames[parasite], self.colnames[host])
+                            );
+                        }
+                        // don't plot the white circles.
+                        false => (),
+                    }
+                } else {
+                    // plot every circle.
+                    svg_data += &format!(
+                        "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" stroke=\"black\"><title>{}</title></circle>\n",
+                        x, y, (x_spacing / 2.0), col, &format!("{} x {}", self.rownames[parasite], self.colnames[host])
+                    );
+                }
             }
         }
 

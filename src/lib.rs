@@ -1,6 +1,9 @@
 use anyhow::Result;
 use clap::{arg, crate_version, value_parser, ArgMatches, Command};
-use oxygraph::{BipartiteGraph, DerivedGraphStats, DerivedGraphs, InteractionMatrix, LpaWbPlus};
+use oxygraph::{
+    BipartiteGraph, BipartiteStats, DerivedGraphStats, DerivedGraphs, InteractionMatrix,
+    InteractionMatrixStats, LpaWbPlus,
+};
 use std::path::PathBuf;
 
 /// Create the CLI in clap.
@@ -115,7 +118,7 @@ pub fn cli() -> Command<'static> {
                     .arg(
                         arg!(-c --calculation [CALCULATION] "The calculation to make.")
                             .default_value("nodf")
-                            .possible_values(["nodf", "lpawbplus", "degree-distribution", "bivariate-distribution"])
+                            .possible_values(["nodf", "lpawbplus", "dirtlpawbplus", "degree-distribution", "bivariate-distribution"])
                     )
                 )
             )
@@ -182,7 +185,11 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     } else {
                         // default subcommand output
                         // probably pass this to another function later.
-                        let (no_parasites, no_hosts, no_edges) = bpgraph.stats();
+                        let BipartiteStats {
+                            no_parasites,
+                            no_hosts,
+                            no_edges,
+                        } = bpgraph.stats();
                         println!("#_parasite_nodes\t#_host_nodes\t#_total_edges");
                         println!("{}\t{}\t{}", no_parasites, no_hosts, no_edges);
                     }
@@ -216,9 +223,20 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         println!("{}", im_mat);
                     } else {
                         // default subcommand output
-                        let (no_rows, no_cols) = im_mat.stats();
-                        println!("#_rows\t#_cols");
-                        println!("{}\t{}", no_rows, no_cols);
+                        let InteractionMatrixStats {
+                            no_rows,
+                            no_cols,
+                            no_poss_ints,
+                            perc_ints,
+                        } = im_mat.stats();
+                        println!("#_rows\t#_cols\t#_poss_ints\tperc_ints");
+                        println!(
+                            "{}\t{}\t{}\t{}",
+                            no_rows,
+                            no_cols,
+                            no_poss_ints,
+                            perc_ints * 100.0
+                        );
                     }
                 }
                 // user called derived-graphs
@@ -303,6 +321,13 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                                     oxygraph::modularity::lpa_wb_plus(im_mat, None);
                                 sim_vec.push(modularity);
                             }
+                            "dirtlpawbplus" => {
+                                let im_mat = InteractionMatrix::from_bipartite(rand_graph);
+                                let LpaWbPlus { modularity, .. } =
+                                    oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 4, 10);
+                                sim_vec.push(modularity);
+                            }
+                            // not sure how to implement these two yet, or how useful they will be.
                             "degree-distribution" => {
                                 unimplemented!()
                             }
@@ -332,9 +357,17 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let int_mat = InteractionMatrix::from_bipartite(bpgraph);
 
                     if plot {
-                        let modularity_obj =
-                            oxygraph::modularity::lpa_wb_plus(int_mat.clone(), None);
+                        let kind: &str;
+                        let modularity_obj = if dirtlpawbplus {
+                            kind = "DIRTLPAwb+";
+                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat.clone(), 4, 20)
+                        } else {
+                            kind = "LPAwb+";
+                            oxygraph::modularity::lpa_wb_plus(int_mat.clone(), None)
+                        };
+                        let modularity = modularity_obj.modularity;
                         modularity_obj.plot(int_mat);
+                        eprintln!("{} modularity: {}", kind, modularity);
                     } else if dirtlpawbplus {
                         // probably let user input reps in future.
                         let LpaWbPlus { modularity, .. } =
