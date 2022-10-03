@@ -15,9 +15,13 @@ As the wrappers are thin, implementation of new metrics/algorithms should be str
 An example which illustrates initiation of the graph from a TSV:
 
 ```rust
+// main bipartite graph struct
 use oxygraph::BipartiteGraph;
+// Enum for which strata there are in a bipartite graph
 use oxygraph::bipartite::Strata;
+// Interaction matrix struct
 use oxygraph::InteractionMatrix;
+// LPAWB+ algorithm
 use oxygraph::modularity::lpa_wb_plus;
 
 // read in some data
@@ -30,7 +34,7 @@ let bpgraph = BipartiteGraph::from_dsv("path/to/tsv", b'\t').unwrap();
 let strata = bpgraph.is_bipartite();
 
 match stata {
-    Strata::Yes(map) => map,
+    Strata::Yes(map) => println!("{:?}", map),
     // tell the user which nodes are the offenders.
     Strata::No => {
         panic!("Uh oh, your graph isn't bipartite!");
@@ -51,14 +55,4 @@ let mut im_rand = InteractionMatrix::from_bipartite(rand_graph);
 let modularity = lpa_wb_plus(rand_graph, None);
 println!("{:?}", modularity);
 
-```
-
-## CLI
-
-`oxygraph` is the crate underpinning all of the functionality of the `oxygraphis` CLI.
-
-This can be installed with: 
-
-```bash
-cargo install oxygraphis
 ```
