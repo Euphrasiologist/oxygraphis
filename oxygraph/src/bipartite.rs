@@ -1,3 +1,13 @@
+//! A bipartite graph is one where there are nodes
+//! of two strata (or colours). Edges can form *between*
+//! these two strata, but not *within*.
+//!
+//! In `oxygraph`, the bipartite graph is implemented
+//! as a wrapper over a `petgraph::Graph`, and there are
+//! no enforcements to maintain bipartite-ness. This is down
+//! to the user. A bipartite graph can be checked, once created,
+//! with the `is_bipartite` method.
+
 use csv::ReaderBuilder;
 use petgraph::{
     dot::{Config, Dot},
@@ -35,9 +45,9 @@ pub enum RandomError {
 /// A row in the DSV should only be these three columns currently.
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Row {
-    /// The actor species (parasite/parasitoid/higher trophic level)
+    /// The actor species (parasite/parasitoid/higher trophic level).
     pub from: String,
-    /// The recipient species (host/lower trophic level)
+    /// The recipient species (host/lower trophic level).
     pub to: String,
     /// Weights between actor/recipient can only be floats
     /// at the moment. But could be more complex in the future.
@@ -45,17 +55,19 @@ pub struct Row {
     pub weight: f64,
 }
 
-/// Species is a String
+/// Species is a `String`.
 pub type Species = String;
-/// Fitness is currently an f64.
+/// Fitness is currently an `f64`.
 pub type Fitness = f64;
 /// A directed graph with two levels, parasite, and host.
 /// Could be also used for plants and pollinators. Or other
 /// such things.
+#[derive(Debug)]
 pub struct BipartiteGraph(pub Graph<Species, Fitness>);
 
 /// This enum might replace `get_parasite_host_from_graph`.
 /// As it should display the same information.
+#[derive(Debug)]
 pub enum Strata {
     /// If there are strata present, return these
     /// as a map of node indices &
@@ -67,22 +79,16 @@ pub enum Strata {
 
 /// A structure to hold the output of the
 /// bipartite graph statistics.
+#[derive(Debug)]
 pub struct BipartiteStats {
+    /// The number of parasites in the graph.
     pub no_parasites: usize,
+    /// The number of hosts in the graph.
     pub no_hosts: usize,
+    /// The number of edges in the graph.
     pub no_edges: usize,
 }
 
-/// TODO:
-/// Would be nice to have some methods to add
-/// nodes, edges, and the weights to a graph
-/// without having to go through `from_dsv`.
-///
-/// This means we would also be able to do things
-/// like BipartiteGraph::create_random(<no_nodes>, <no_edges>)...
-///
-/// TODO: check that input graph is bipartite?
-///
 impl BipartiteGraph {
     /// Check that a data set passed to `oxygraph` is actually
     /// bipartite in nature.

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// Create the CLI in clap.
 ///
 /// Better to have subcommands for each of derived + interaction matrix.
-pub fn cli() -> Command<'static> {
+pub fn cli() -> Command {
     Command::new("oxygraphis")
         .bin_name("oxygraphis")
         .arg_required_else_help(true)
@@ -68,7 +68,7 @@ pub fn cli() -> Command<'static> {
                     .arg(
                         arg!(-s --stratum [STRATUM] "The stratum to display.")
                             .default_value("host")
-                            .possible_values(["host", "parasite"])
+                            .value_parser(["host", "parasite"])
                     )
                     .arg(
                         arg!(-r --remove [REMOVE] "Edges with fewer than this number of connections are removed from the graph.")
@@ -93,33 +93,33 @@ pub fn cli() -> Command<'static> {
                             .action(clap::ArgAction::SetTrue)
                     )
                 )
-                .subcommand(Command::new("simulate")
-                    .about("Simulate a number of graphs, and return calculations over the samples.")
-                    .arg(
-                        arg!(--parasitenumber <PARASITENUMBER> "Number of parasite nodes in the graph.")
-                            .required(true)
-                            .value_parser(value_parser!(usize))
-                    )
-                    .arg(
-                        arg!(--hostnumber <HOSTNUMBER> "Number of host nodes in the graph.")
-                            .required(true)
-                            .value_parser(value_parser!(usize))
-                    )
-                    .arg(
-                        arg!(-e --edgecount <EDGECOUNT> "Number of edges in the graph.")
-                            .required(true)
-                            .value_parser(value_parser!(usize))
-                    )
-                    .arg(
-                        arg!(-n --nsims [NSIMS] "Number of random samples to make.")
-                            .value_parser(value_parser!(i32))
-                            .default_value("1000")
-                    )
-                    .arg(
-                        arg!(-c --calculation [CALCULATION] "The calculation to make.")
-                            .default_value("nodf")
-                            .possible_values(["nodf", "lpawbplus", "dirtlpawbplus", "degree-distribution", "bivariate-distribution"])
-                    )
+            )
+            .subcommand(Command::new("simulate")
+                .about("Simulate a number of graphs, and return calculations over the samples.")
+                .arg(
+                    arg!(--parasitenumber <PARASITENUMBER> "Number of parasite nodes in the graph.")
+                        .required(true)
+                        .value_parser(value_parser!(usize))
+                )
+                .arg(
+                    arg!(--hostnumber <HOSTNUMBER> "Number of host nodes in the graph.")
+                        .required(true)
+                        .value_parser(value_parser!(usize))
+                )
+                .arg(
+                    arg!(-e --edgecount <EDGECOUNT> "Number of edges in the graph.")
+                        .required(true)
+                        .value_parser(value_parser!(usize))
+                )
+                .arg(
+                    arg!(-n --nsims [NSIMS] "Number of random samples to make.")
+                        .value_parser(value_parser!(i32))
+                        .default_value("1000")
+                )
+                .arg(
+                    arg!(-c --calculation [CALCULATION] "The calculation to make.")
+                        .default_value("nodf")
+                        .value_parser(["nodf", "lpawbplus", "dirtlpawbplus", "degree-distribution", "bivariate-distribution"])
                 )
             )
 }
@@ -281,66 +281,6 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         );
                     }
                 }
-                Some(("simulate", sm_matches)) => {
-                    let parasite_number = *sm_matches
-                        .get_one::<usize>("parasitenumber")
-                        .expect("defaulted by clap?");
-                    let host_number = *sm_matches
-                        .get_one::<usize>("hostnumber")
-                        .expect("defaulted by clap?");
-                    let edge_count = *sm_matches
-                        .get_one::<usize>("edgecount")
-                        .expect("defaulted by clap?");
-                    let n_sims = *sm_matches
-                        .get_one::<i32>("nsims")
-                        .expect("defaulted by clap?");
-
-                    let calculation = &*sm_matches
-                        .get_one::<String>("calculation")
-                        .expect("defaulted by clap.");
-
-                    let mut sim_vec = Vec::new();
-
-                    for _ in 0..n_sims {
-                        let rand_graph =
-                            BipartiteGraph::random(parasite_number, host_number, edge_count)?;
-
-                        match calculation.as_str() {
-                            "nodf" => {
-                                let mut im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                                im_mat.sort();
-                                let nodf = im_mat.nodf()?;
-                                if nodf.is_nan() {
-                                    continue;
-                                }
-                                sim_vec.push(nodf);
-                            }
-                            "lpawbplus" => {
-                                let im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                                let LpaWbPlus { modularity, .. } =
-                                    oxygraph::modularity::lpa_wb_plus(im_mat, None);
-                                sim_vec.push(modularity);
-                            }
-                            "dirtlpawbplus" => {
-                                let im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                                let LpaWbPlus { modularity, .. } =
-                                    oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 4, 10);
-                                sim_vec.push(modularity);
-                            }
-                            // not sure how to implement these two yet, or how useful they will be.
-                            "degree-distribution" => {
-                                unimplemented!()
-                            }
-                            "bivariate-distribution" => {
-                                unimplemented!()
-                            }
-                            _ => unreachable!("clap should make sure we never reach here."),
-                        }
-                    }
-                    for s in sim_vec {
-                        println!("{}", s);
-                    }
-                }
                 Some(("modularity", mod_matches)) => {
                     // this will probably be used later. Currently not!
                     let _lpawbplus = *mod_matches
@@ -380,6 +320,66 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     }
                 }
                 _ => unreachable!("Should never reach here."),
+            }
+        }
+        Some(("simulate", sm_matches)) => {
+            let parasite_number = *sm_matches
+                .get_one::<usize>("parasitenumber")
+                .expect("defaulted by clap?");
+            let host_number = *sm_matches
+                .get_one::<usize>("hostnumber")
+                .expect("defaulted by clap?");
+            let edge_count = *sm_matches
+                .get_one::<usize>("edgecount")
+                .expect("defaulted by clap?");
+            let n_sims = *sm_matches
+                .get_one::<i32>("nsims")
+                .expect("defaulted by clap?");
+
+            let calculation = &*sm_matches
+                .get_one::<String>("calculation")
+                .expect("defaulted by clap.");
+
+            let mut sim_vec = Vec::new();
+
+            for _ in 0..n_sims {
+                let rand_graph =
+                    BipartiteGraph::random(parasite_number, host_number, edge_count)?;
+
+                match calculation.as_str() {
+                    "nodf" => {
+                        let mut im_mat = InteractionMatrix::from_bipartite(rand_graph);
+                        im_mat.sort();
+                        let nodf = im_mat.nodf()?;
+                        if nodf.is_nan() {
+                            continue;
+                        }
+                        sim_vec.push(nodf);
+                    }
+                    "lpawbplus" => {
+                        let im_mat = InteractionMatrix::from_bipartite(rand_graph);
+                        let LpaWbPlus { modularity, .. } =
+                            oxygraph::modularity::lpa_wb_plus(im_mat, None);
+                        sim_vec.push(modularity);
+                    }
+                    "dirtlpawbplus" => {
+                        let im_mat = InteractionMatrix::from_bipartite(rand_graph);
+                        let LpaWbPlus { modularity, .. } =
+                            oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 4, 10);
+                        sim_vec.push(modularity);
+                    }
+                    // not sure how to implement these two yet, or how useful they will be.
+                    "degree-distribution" => {
+                        unimplemented!()
+                    }
+                    "bivariate-distribution" => {
+                        unimplemented!()
+                    }
+                    _ => unreachable!("clap should make sure we never reach here."),
+                }
+            }
+            for s in sim_vec {
+                println!("{}", s);
             }
         }
         _ => unreachable!("Should never reach here."),

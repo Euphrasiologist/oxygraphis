@@ -18,6 +18,7 @@ use std::collections::HashSet;
 
 /// A struct just to hold the data from the output of the modularity
 /// computation.
+#[derive(Debug)]
 pub struct LpaWbPlus {
     pub row_labels: Vec<usize>,
     pub column_labels: Vec<usize>,
@@ -27,6 +28,7 @@ pub struct LpaWbPlus {
 /// To plot the modules on an interaction plot, these three
 /// pieces of data must be known. The rows, columns, and
 /// the vector of modules.
+#[derive(Debug)]
 pub struct PlotData<'a> {
     pub rows: ArrayBase<ViewRepr<&'a usize>, Dim<[usize; 1]>>,
     pub cols: ArrayBase<ViewRepr<&'a usize>, Dim<[usize; 1]>>,
@@ -443,7 +445,10 @@ fn stage_two_lpa_wbdash(
                 for div2check in div1check + 1..num_div {
                     // red
                     let mut check_red = red_labels.clone();
-                    let check_red_index = red_labels.iter().find(|e| **e == mod_1 as f64).unwrap();
+                    let check_red_index = match red_labels.iter().find(|e| **e == mod_1 as f64) {
+                        Some(cri) => cri,
+                        None => continue,
+                    };
                     check_red[*check_red_index as usize] = divisions_found[div2check] as f64;
                     // blue
                     let mut check_blue = blue_labels.clone();
@@ -465,10 +470,13 @@ fn stage_two_lpa_wbdash(
                         for aa in 0..num_div {
                             // red
                             let mut check_red_2 = red_labels.clone();
-                            let check_red_2_index = red_labels
+                            let check_red_2_index = match red_labels
                                 .iter()
                                 .find(|e| **e == divisions_found[aa] as f64)
-                                .unwrap();
+                            {
+                                Some(cr2i) => cr2i,
+                                None => continue,
+                            };
                             check_red_2[*check_red_2_index as usize] = mod_1 as f64;
                             // blue
                             let mut check_blue_2 = blue_labels.clone();

@@ -2,7 +2,7 @@
 
 ## Introduction
 
-A small crate and command line tool to interact with ecological graphs. The only graph type currently implemented is the bipartite graph.
+A small crate and command line tool to interact with bipartite ecological graphs.
 
 <img src="./euphrasia_hp.svg">
 
