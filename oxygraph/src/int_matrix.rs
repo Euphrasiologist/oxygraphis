@@ -28,8 +28,11 @@ pub type Matrix = Array2<f64>;
 /// for ease.
 #[derive(Debug, Clone)]
 pub struct InteractionMatrix {
+    /// The actual 2d ndarray matrix
     pub inner: Matrix,
+    /// The name of the species/specimen assigned to the rows
     pub rownames: Vec<String>,
+    /// The name of the species/specimen assigned to the columns
     pub colnames: Vec<String>,
 }
 
@@ -46,6 +49,8 @@ impl fmt::Display for InteractionMatrix {
             temp_string.pop();
             output_string += &format!("{}\n", temp_string);
         }
+        write!(f, "# Row names: {}\n", self.rownames.join(", "))?;
+        write!(f, "# Columns names: {}\n", self.colnames.join(", "))?;
         write!(f, "{}", output_string)
     }
 }
