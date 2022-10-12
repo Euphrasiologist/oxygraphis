@@ -13,7 +13,7 @@ use petgraph::{
     dot::{Config, Dot},
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences, NodeRef},
-    Direction::{Incoming, Outgoing},
+    Direction::{self, Incoming, Outgoing},
     Graph,
 };
 use rand::{self, seq::SliceRandom};
@@ -297,8 +297,10 @@ impl BipartiteGraph {
 
         let mut dist = Vec::new();
         for (node, spp) in graph.node_references() {
-            let neighbours: Vec<NodeIndex> = graph.neighbors_undirected(node).collect();
-            dist.push((spp.clone(), neighbours.len()))
+            let neighbours_in: Vec<_> = graph.edges_directed(node, Direction::Incoming).collect();
+            let neighbours_out: Vec<_> = graph.edges_directed(node, Direction::Outgoing).collect();
+
+            dist.push((spp.clone(), neighbours_in.len() + neighbours_out.len()))
         }
         dist
     }
@@ -321,9 +323,18 @@ impl BipartiteGraph {
 
         let mut biv_dist = Vec::new();
         for (node1, node2) in edge_list {
-            let neighbours1: Vec<NodeIndex> = graph.neighbors_undirected(node1).collect();
-            let neighbours2: Vec<NodeIndex> = graph.neighbors_undirected(node2).collect();
-            biv_dist.push((neighbours1.len(), neighbours2.len()))
+            let neighbours1_in: Vec<_> = graph.edges_directed(node1, Direction::Incoming).collect();
+            let neighbours1_out: Vec<_> =
+                graph.edges_directed(node1, Direction::Outgoing).collect();
+
+            let neighbours2_in: Vec<_> = graph.edges_directed(node2, Direction::Incoming).collect();
+            let neighbours2_out: Vec<_> =
+                graph.edges_directed(node2, Direction::Outgoing).collect();
+
+            biv_dist.push((
+                neighbours1_in.len() + neighbours1_out.len(),
+                neighbours2_in.len() + neighbours2_out.len(),
+            ))
         }
         biv_dist
     }
