@@ -137,14 +137,16 @@ pub fn dirt_lpa_wb_plus(matrix: InteractionMatrix, mini: usize, reps: usize) -> 
 pub fn lpa_wb_plus(mut matrix: InteractionMatrix, init_module_guess: Option<usize>) -> LpaWbPlus {
     // Make sure the smallest matrix dimension represent the red labels by making
     // them the rows (if matrix is transposed here, will be transposed back at the end)
-    let row_len = matrix.rownames.len();
-    let col_len = matrix.colnames.len();
+    let mut row_len = matrix.rownames.len();
+    let mut col_len = matrix.colnames.len();
     // not sure if I need this yet
     let mut flipped = 0;
 
     if row_len > col_len {
         matrix = matrix.transpose();
         flipped = 1;
+        row_len = matrix.rownames.len();
+        col_len = matrix.colnames.len();
     }
 
     let mat_sum = matrix.sum_matrix();
