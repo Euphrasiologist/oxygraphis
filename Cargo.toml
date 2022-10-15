@@ -1,6 +1,6 @@
 [package]
 name = "oxygraphis"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 
 [workspace]
@@ -9,3 +9,4 @@ edition = "2021"
 anyhow = "1.0.64"
 clap = { version = "4.0.8", features = ["cargo"] }
 oxygraph = { path = "oxygraph" }
+rayon = "1.5.3"
