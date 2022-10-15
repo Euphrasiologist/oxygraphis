@@ -347,7 +347,16 @@ impl InteractionMatrix {
         // append all to np_row
         np_row.append(&mut np_col);
 
-        let mean = np_row.iter().sum::<f64>() / np_row.len() as f64;
+        // not sure how to deal with NaNs
+        let np_row_filt: Vec<_> = np_row.iter().map(|e| {
+            if e.is_nan() {
+                0.0
+            } else {
+                *e
+            }
+        }).collect();
+
+        let mean = np_row_filt.iter().sum::<f64>() / np_row_filt.len() as f64;
 
         Ok(mean)
     }
