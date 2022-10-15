@@ -9,13 +9,14 @@
 //! ```rust
 //! use oxygraph;
 //! use oxygraph::bipartite::Strata;
-//!
-//! let path = "./path/to/bipartite.tsv";
+//! use std::path::PathBuf;
+//! 
+//! let path = PathBuf::from("./path/to/bipartite.tsv");
 //!
 //! // load into a BipartiteGraph structure
 //! // a quick peek at the source codes shows you
 //! // it's a thin wrapper over `petgraph`.
-//! let bpgraph = oxygraph::BipartiteGraph::from_dsv(path, b'\t');
+//! let bpgraph = oxygraph::BipartiteGraph::from_dsv(&path, b'\t').unwrap();
 //!
 //! // check it's bipartite
 //! let check = match bpgraph.is_bipartite() {
