@@ -107,8 +107,8 @@ pub fn dirt_lpa_wb_plus(matrix: InteractionMatrix, mini: usize, reps: usize) -> 
 
     // now optimise over a small parameter space.
     if module_no - mini > 0 {
-        for aa in mini..=module_no {
-            for i in 0..=reps {
+        for aa in mini..module_no {
+            for i in 0..reps {
                 let b = lpa_wb_plus(matrix.clone(), Some(aa));
                 let mut inner_modules = b.row_labels.clone();
                 inner_modules.sort();
@@ -776,7 +776,7 @@ mod test {
     use ndarray::arr2;
 
     #[test]
-    fn test_modularity() {
+    fn test_modularity_lpa_wb_plus() {
         let mut int_mat = InteractionMatrix::new(3, 3);
         int_mat.rownames = vec!["1r".into(), "2r".into(), "3r".into()];
         int_mat.colnames = vec!["1c".into(), "2c".into(), "3c".into()];
