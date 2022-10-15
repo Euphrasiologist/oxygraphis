@@ -10,7 +10,7 @@ A small crate and command line tool to interact with bipartite ecological graphs
 
 ### Install
 
-As this is all in development, currently you will need to clone this repository and build from source. Never fear, just download the rust toolchain. Then:
+Currently you will need to clone this repository and build from source. Never fear, just download the rust toolchain. Then:
 
 ```bash
 git clone https://github.com/Euphrasiologist/oxygraphis
@@ -21,7 +21,7 @@ cargo install --path=.
 
 ### Interface
 
-Currently only the `bipartite` module is implemented. There are no major plans to extend beyond this.
+Bipartite graphs are the graph of interest. Analyse these graphs directly, or simulate them.
 
 ```bash
 Usage: oxygraphis [COMMAND]
@@ -38,7 +38,7 @@ Options:
 
 #### Bipartite graphs
 
-Analysis of bipartite graphs can be done via `oxygraphis`.
+The `bipartite` subcommand.
 
 ```bash
 Generate and analyse bipartite graphs.
@@ -71,7 +71,7 @@ Sp2    Sp3    1.0
 Sp1    Sp3    1.0
 ```
 
-And I guess should be bipartite in structure. A warning is issued if it isn't, but does not halt the program.
+And I guess should be bipartite in structure (i.e. edges only from stratum 1 -> stratum 2). A warning is issued if it isn't, but does not halt the program.
 
 #### Derived graphs
 
@@ -91,7 +91,7 @@ Options:
 
 #### Interaction matrix
 
-These form the core of some interesting bipartite analyses. Essentially an n x m matrix of all possible species-species interactions in the network.
+These form the core of some interesting bipartite analyses. Essentially an `n x m` matrix of all possible species-species interactions in the network.
 
 ```bash
 Coerce a bipartite graph into an interaction matrix.
@@ -123,7 +123,7 @@ Options:
 
 #### Simulations
 
-A subcommand to simulate a number of random graphs (Erdos-Renyi) and execute a calculation on each.
+A subcommand to simulate a number of random graphs (Erdös-Rényi) and execute a calculation on each.
 
 ```bash
 Simulate a number of graphs, and return calculations over the samples.
