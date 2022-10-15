@@ -4,6 +4,7 @@ use oxygraph::{
     BipartiteGraph, BipartiteStats, DerivedGraphStats, DerivedGraphs, InteractionMatrix,
     InteractionMatrixStats, LpaWbPlus,
 };
+use rayon::prelude::*;
 use std::path::PathBuf;
 
 /// Create the CLI in clap.
@@ -120,6 +121,10 @@ pub fn cli() -> Command {
                     arg!(-c --calculation [CALCULATION] "The calculation to make.")
                         .default_value("nodf")
                         .value_parser(["nodf", "lpawbplus", "dirtlpawbplus", "degree-distribution", "bivariate-distribution"])
+                )
+                .arg(
+                    arg!(--plot "Plot the simulated bipartite network.")
+                        .action(clap::ArgAction::SetTrue)
                 )
             )
 }
@@ -335,52 +340,66 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
             let n_sims = *sm_matches
                 .get_one::<i32>("nsims")
                 .expect("defaulted by clap?");
+            let plot = *sm_matches
+                .get_one::<bool>("plot")
+                .expect("defaulted by clap?");
 
             let calculation = &*sm_matches
                 .get_one::<String>("calculation")
                 .expect("defaulted by clap.");
 
-            let mut sim_vec = Vec::new();
+            if plot {
+                let rand_graph = BipartiteGraph::random(parasite_number, host_number, edge_count)?;
+                
+                rand_graph.plot(1000, 400);
+                
+                // return early here.
+                return Ok(());
+            }
 
-            for _ in 0..n_sims {
-                let rand_graph =
-                    BipartiteGraph::random(parasite_number, host_number, edge_count)?;
+            (0..n_sims).into_par_iter().for_each(|_| {
+                {
+                    let rand_graph =
+                        BipartiteGraph::random(parasite_number, host_number, edge_count).unwrap();
 
-                match calculation.as_str() {
-                    "nodf" => {
-                        let mut im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                        im_mat.sort();
-                        let nodf = im_mat.nodf()?;
-                        if nodf.is_nan() {
-                            continue;
+                    match calculation.as_str() {
+                        "nodf" => {
+                            let mut im_mat = InteractionMatrix::from_bipartite(rand_graph);
+                            im_mat.sort();
+                            let nodf = im_mat.nodf().unwrap();
+                            if !nodf.is_nan() {
+                                println!("{}", nodf);
+                            }
+                            // sim_vec.push(nodf);
                         }
-                        sim_vec.push(nodf);
+                        "lpawbplus" => {
+                            let im_mat = InteractionMatrix::from_bipartite(rand_graph);
+                            let LpaWbPlus { modularity, .. } =
+                                oxygraph::modularity::lpa_wb_plus(im_mat, None);
+                            // sim_vec.push(modularity);
+                            println!("{}", modularity);
+                        }
+                        "dirtlpawbplus" => {
+                            let im_mat = InteractionMatrix::from_bipartite(rand_graph);
+                            let LpaWbPlus { modularity, .. } =
+                                oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 4, 10);
+                            // sim_vec.push(modularity);
+                            println!("{}", modularity);
+                        }
+                        // not sure how to implement these two yet, or how useful they will be.
+                        "degree-distribution" => {
+                            unimplemented!()
+                        }
+                        "bivariate-distribution" => {
+                            unimplemented!()
+                        }
+                        _ => unreachable!("clap should make sure we never reach here."),
                     }
-                    "lpawbplus" => {
-                        let im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                        let LpaWbPlus { modularity, .. } =
-                            oxygraph::modularity::lpa_wb_plus(im_mat, None);
-                        sim_vec.push(modularity);
-                    }
-                    "dirtlpawbplus" => {
-                        let im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                        let LpaWbPlus { modularity, .. } =
-                            oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 4, 10);
-                        sim_vec.push(modularity);
-                    }
-                    // not sure how to implement these two yet, or how useful they will be.
-                    "degree-distribution" => {
-                        unimplemented!()
-                    }
-                    "bivariate-distribution" => {
-                        unimplemented!()
-                    }
-                    _ => unreachable!("clap should make sure we never reach here."),
                 }
-            }
-            for s in sim_vec {
-                println!("{}", s);
-            }
+            });
+            // for s in sim_vec {
+            //     println!("{}", s);
+            // }
         }
         _ => unreachable!("Should never reach here."),
     }
