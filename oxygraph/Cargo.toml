@@ -3,7 +3,7 @@ name = "oxygraph"
 version = "0.1.6"
 edition = "2021"
 repository = "https://github.com/Euphrasiologist/oxygraphis/tree/main/oxygraph"
-documentation = "https://docs.rs/oxygraphis"
+documentation = "https://docs.rs/oxygraph"
 homepage = "https://github.com/Euphrasiologist/oxygraphis/tree/main/oxygraph"
 description = """
 Algorithms and structures on ecological graphs.

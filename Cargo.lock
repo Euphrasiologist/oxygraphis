@@ -301,7 +301,9 @@ checksum = "9ff7415e9ae3fff1225851df9e0d9e4e5479f947619774677a63572e55e80eff"
 
 [[package]]
 name = "oxygraph"
-version = "0.1.6"
+version = "0.1.41"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa3d7123260983cca142b71c81e6a203e707f70b6fe3e97eb4666fa27dcc6604"
 dependencies = [
  "csv",
  "itertools",
