@@ -305,7 +305,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         let kind: &str;
                         let modularity_obj = if dirtlpawbplus {
                             kind = "DIRTLPAwb+";
-                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat.clone(), 4, 20)
+                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat.clone(), 2, 2)
                         } else {
                             kind = "LPAwb+";
                             oxygraph::modularity::lpa_wb_plus(int_mat.clone(), None)
@@ -316,12 +316,12 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     } else if dirtlpawbplus {
                         // probably let user input reps in future.
                         let LpaWbPlus { modularity, .. } =
-                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat, 4, 10);
-                        println!("Modularity using DIRTLPAwb+: {}", modularity);
+                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat, 2, 2);
+                        println!("DIRTLPAwb+\n{}", modularity);
                     } else {
                         let LpaWbPlus { modularity, .. } =
                             oxygraph::modularity::lpa_wb_plus(int_mat, None);
-                        println!("Modularity using LPAwb+: {}", modularity);
+                        println!("LPAwb+\n{}", modularity);
                     }
                 }
                 _ => unreachable!("Should never reach here."),
@@ -350,9 +350,9 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
 
             if plot {
                 let rand_graph = BipartiteGraph::random(parasite_number, host_number, edge_count)?;
-                
+
                 rand_graph.plot(1000, 400);
-                
+
                 // return early here.
                 return Ok(());
             }
@@ -382,7 +382,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         "dirtlpawbplus" => {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
                             let LpaWbPlus { modularity, .. } =
-                                oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 4, 10);
+                                oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 2, 2);
                             // sim_vec.push(modularity);
                             println!("{}", modularity);
                         }
@@ -397,9 +397,6 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     }
                 }
             });
-            // for s in sim_vec {
-            //     println!("{}", s);
-            // }
         }
         _ => unreachable!("Should never reach here."),
     }
