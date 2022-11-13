@@ -2,7 +2,7 @@
 
 ## Introduction
 
-A small crate and command line tool to interact with bipartite ecological graphs.
+`oxygraphis` is a lightweight small crate, and command line tool to interact with bipartite ecological graphs.
 
 <img src="./euphrasia_hp.svg">
 
@@ -13,6 +13,9 @@ A small crate and command line tool to interact with bipartite ecological graphs
 Currently you will need to clone this repository and build from source. Never fear, just download the rust toolchain. Then:
 
 ```bash
+# install from crates.io (oxygraphis 0.1.62)
+cargo install oxygraphis
+# or from this repo
 git clone https://github.com/Euphrasiologist/oxygraphis
 cd oxygraphis
 # install to path.
@@ -141,6 +144,8 @@ Options:
           Number of random samples to make. [default: 1000]
   -c, --calculation [<CALCULATION>]
           The calculation to make. [default: nodf] [possible values: nodf, lpawbplus, dirtlpawbplus, degree-distribution, bivariate-distribution]
+      --plot
+          Plot the simulated bipartite network.
   -h, --help
           Print help information
 ```
