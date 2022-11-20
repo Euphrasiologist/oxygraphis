@@ -10,7 +10,6 @@
 
 use csv::ReaderBuilder;
 use petgraph::{
-    dot::{Config, Dot},
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences, NodeRef},
     Direction::{self, Incoming, Outgoing},
@@ -40,6 +39,17 @@ pub enum RandomError {
     MaxEdges(usize),
     #[error("Number of nodes for a graph must be non-zero.")]
     NoNodes,
+}
+
+/// Error type for generating a TSV.
+#[derive(Error, Debug)]
+pub enum TSVError {
+    #[error("No weight.")]
+    Weight,
+    #[error("No source node.")]
+    Source,
+    #[error("No target node.")]
+    Target,
 }
 
 /// A row in the DSV should only be these three columns currently.
@@ -263,8 +273,6 @@ impl BipartiteGraph {
     }
 
     /// Extract the nodes from each stratum of a bipartite graph.
-    ///
-    /// TODO: is this fallible?
     pub fn get_parasite_host_from_graph(
         &self,
     ) -> (Vec<(NodeIndex, &String)>, Vec<(NodeIndex, &String)>) {
@@ -312,7 +320,6 @@ impl BipartiteGraph {
     /// Append these to a list in a sorted order
     /// sort this final list, and dedup.
     /// Now for each node pair, calculate the degree for each.
-    /// Print!
     pub fn bivariate_degree_distribution(&self) -> Vec<(usize, usize)> {
         let graph = &self.0;
 
@@ -466,9 +473,86 @@ impl BipartiteGraph {
         println!("{}", svg);
     }
 
-    /// Make a dot representation of the graph
-    /// (It's not very good...)
-    pub fn print_dot(&self) {
-        println!("{}", Dot::with_config(&self.0, &[Config::GraphContentOnly]));
+    /// Turn `BipartiteGraph` into a TSV.
+    pub fn to_tsv(&self) -> Result<String, TSVError> {
+        let mut tsv = String::new();
+        tsv += "from\tto\tweight\n";
+
+        let g = &self.0;
+        for e in g.edge_references() {
+            let w = g.edge_weight(e.id()).ok_or(TSVError::Weight)?;
+
+            let s = g.node_weight(e.source()).ok_or(TSVError::Source)?;
+            let t = g.node_weight(e.target()).ok_or(TSVError::Target)?;
+
+            tsv += &format!("{s}\t{t}\t{w}\n");
+        }
+
+        Ok(tsv)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    // the test graph looks like this
+    //
+    //         a    b
+    //         | \ /
+    //         | /\
+    //         |/  \
+    //         c    d
+
+    fn make_graph() -> BipartiteGraph {
+        let mut graph: Graph<Species, Fitness> = Graph::new();
+        let a = graph.add_node("a".into());
+        let b = graph.add_node("b".into());
+        let c = graph.add_node("c".into());
+        let d = graph.add_node("d".into());
+
+        graph.add_edge(a, c, 1.0);
+        graph.add_edge(a, d, 1.0);
+        graph.add_edge(b, c, 1.0);
+
+        BipartiteGraph(graph)
+    }
+
+    #[test]
+    fn test_bipartite() {
+        let g = make_graph();
+        let bp = g.is_bipartite();
+
+        match bp {
+            Strata::Yes(_) => (),
+            Strata::No => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_tsv() {
+        let g = make_graph();
+
+        let tsv = g.to_tsv().unwrap();
+
+        //  from    to      weight
+        //  a       c       1
+        //  a       d       1
+        //  b       c       1
+
+        assert_eq!(
+            "from\tto\tweight\na\tc\t1\na\td\t1\nb\tc\t1\n".to_string(),
+            tsv
+        )
+    }
+
+    #[test]
+    fn test_bivariate_degree_dist() {
+        let g = make_graph();
+
+        let bdd = g.bivariate_degree_distribution();
+
+        assert_eq!(vec![(2, 2), (2, 1), (1, 2)], bdd)
     }
 }
