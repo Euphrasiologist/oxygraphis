@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Error, Result, bail};
 use clap::{arg, crate_version, value_parser, ArgMatches, Command};
 use oxygraph::{
     BipartiteGraph, BipartiteStats, DerivedGraphStats, DerivedGraphs, InteractionMatrix,
@@ -222,7 +222,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     } else if nodf {
                         // sort and make nodf.
                         im_mat.sort();
-                        let nodf = im_mat.nodf()?;
+                        let nodf = im_mat.nodf();
                         println!("NODF\n{}", nodf);
                     } else if print {
                         println!("{}", im_mat);
@@ -305,10 +305,10 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         let kind: &str;
                         let modularity_obj = if dirtlpawbplus {
                             kind = "DIRTLPAwb+";
-                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat.clone(), 2, 2)
+                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat.clone(), 2, 2)?
                         } else {
                             kind = "LPAwb+";
-                            oxygraph::modularity::lpa_wb_plus(int_mat.clone(), None)
+                            oxygraph::modularity::lpa_wb_plus(int_mat.clone(), None)?
                         };
                         let modularity = modularity_obj.modularity;
                         modularity_obj.plot(int_mat);
@@ -316,11 +316,11 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     } else if dirtlpawbplus {
                         // probably let user input reps in future.
                         let LpaWbPlus { modularity, .. } =
-                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat, 2, 2);
+                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat, 2, 2)?;
                         println!("DIRTLPAwb+\n{}", modularity);
                     } else {
                         let LpaWbPlus { modularity, .. } =
-                            oxygraph::modularity::lpa_wb_plus(int_mat, None);
+                            oxygraph::modularity::lpa_wb_plus(int_mat, None)?;
                         println!("LPAwb+\n{}", modularity);
                     }
                 }
@@ -357,7 +357,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                 return Ok(());
             }
 
-            (0..n_sims).into_par_iter().for_each(|_| {
+            (0..n_sims).into_par_iter().try_for_each(|_| {
                 {
                     let rand_graph =
                         BipartiteGraph::random(parasite_number, host_number, edge_count).unwrap();
@@ -366,37 +366,37 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         "nodf" => {
                             let mut im_mat = InteractionMatrix::from_bipartite(rand_graph);
                             im_mat.sort();
-                            let nodf = im_mat.nodf().unwrap();
+                            let nodf = im_mat.nodf();
                             if !nodf.is_nan() {
                                 println!("{}", nodf);
                             }
-                            // sim_vec.push(nodf);
+                            Ok::<(), Error>(())
                         }
                         "lpawbplus" => {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
                             let LpaWbPlus { modularity, .. } =
-                                oxygraph::modularity::lpa_wb_plus(im_mat, None);
-                            // sim_vec.push(modularity);
+                                oxygraph::modularity::lpa_wb_plus(im_mat, None)?;
                             println!("{}", modularity);
+                            Ok::<(), Error>(())
                         }
                         "dirtlpawbplus" => {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
                             let LpaWbPlus { modularity, .. } =
-                                oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 2, 2);
-                            // sim_vec.push(modularity);
+                                oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 2, 2)?;
                             println!("{}", modularity);
+                            Ok::<(), Error>(())
                         }
                         // not sure how to implement these two yet, or how useful they will be.
                         "degree-distribution" => {
-                            unimplemented!()
+                            bail!("Degree distribution simulations are not yet implemented.")
                         }
                         "bivariate-distribution" => {
-                            unimplemented!()
+                            bail!("Bivariate distributions not yet implemented.")
                         }
                         _ => unreachable!("clap should make sure we never reach here."),
                     }
                 }
-            });
+            })?;
         }
         _ => unreachable!("Should never reach here."),
     }
