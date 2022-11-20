@@ -12,12 +12,11 @@ use std::collections::HashSet;
 use std::fmt;
 use thiserror::Error;
 
-/// An error type for the interaction matrix
-/// struct.
+/// An error type for the barbers matrix.
 #[derive(Error, Debug)]
-pub enum InteractionMatrixError {
-    #[error("Error in NODF calculation.")]
-    NODFError,
+pub enum BarbersMatrixError {
+    #[error("Could not coerce Barbers matrix into a 2 x 1 matrix.")]
+    Error(#[from] ndarray::ShapeError),
 }
 
 /// Now using an ndarray with floating point numbers
@@ -282,7 +281,7 @@ impl InteractionMatrix {
     /// this function.
     ///
     /// TODO: refactor this code.
-    pub fn nodf(&mut self) -> Result<f64, InteractionMatrixError> {
+    pub fn nodf(&mut self) -> f64  {
         // following https://nadiah.org/2021/07/16/nodf-nestedness-worked-example
         // rows first
         let mut pos_row_set_vec = Vec::new();
@@ -348,17 +347,14 @@ impl InteractionMatrix {
         np_row.append(&mut np_col);
 
         // not sure how to deal with NaNs
-        let np_row_filt: Vec<_> = np_row.iter().map(|e| {
-            if e.is_nan() {
-                0.0
-            } else {
-                *e
-            }
-        }).collect();
+        let np_row_filt: Vec<_> = np_row
+            .iter()
+            .map(|e| if e.is_nan() { 0.0 } else { *e })
+            .collect();
 
         let mean = np_row_filt.iter().sum::<f64>() / np_row_filt.len() as f64;
 
-        Ok(mean)
+        mean
     }
 
     /// Sum of an interaction matrix. Should be equal to the number of
@@ -380,17 +376,15 @@ impl InteractionMatrix {
     }
 
     /// Compute the Barber's Matrix. I don't know where this name comes from.
-    pub fn barbers_matrix(&self) -> ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>> {
+    pub fn barbers_matrix(
+        &self,
+    ) -> Result<ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>, BarbersMatrixError> {
         // compute row sums and turn into 2d array with 1 column
-        let row_sums = &self
-            .row_sums()
-            .into_shape((self.rownames.len(), 1))
-            // TODO: remove this unwrap.
-            .unwrap();
+        let row_sums = &self.row_sums().into_shape((self.rownames.len(), 1))?;
         // col sums remain as a 1d array.
         let col_sums = &self.col_sums();
 
-        &self.inner - ((row_sums * col_sums) / self.sum_matrix())
+        Ok(&self.inner - ((row_sums * col_sums) / self.sum_matrix()))
     }
 }
 
@@ -431,7 +425,7 @@ mod tests {
             [1.0, 1.0, 0.0, 0.0, 0.0],
         ]);
 
-        let nodf = int_mat.nodf().unwrap();
+        let nodf = int_mat.nodf();
 
         assert_eq!(nodf.floor(), 58.333f64.floor());
     }
@@ -462,7 +456,7 @@ mod tests {
             [1.0, 0.0, 0.0, 0.0, 0.0],
         ]);
 
-        let nodf = int_mat.nodf().unwrap();
+        let nodf = int_mat.nodf();
 
         assert_eq!(nodf, 100.0);
     }
@@ -498,7 +492,7 @@ mod tests {
         // to its maximal configuration is best practice.
         int_mat.sort();
 
-        let nodf = int_mat.nodf().unwrap();
+        let nodf = int_mat.nodf();
 
         assert_eq!(nodf, 100.0);
     }

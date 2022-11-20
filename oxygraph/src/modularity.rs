@@ -6,6 +6,7 @@
 //! It's pretty much a direct translation, as I wanted to ensure correctness
 //! over rustiness.
 
+use crate::int_matrix::BarbersMatrixError;
 use crate::{sort::*, InteractionMatrix};
 use core::f64::NAN;
 use ndarray::{Array, Array1, Array2, ArrayBase, Axis, Dim, OwnedRepr, ViewRepr};
@@ -13,8 +14,26 @@ use rand::distributions::Uniform;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
 use std::collections::HashSet;
+use thiserror::Error;
 
-// Will need an error type for this module in the future.
+/// An error type for LPAwb+.
+#[derive(Error, Debug)]
+pub enum LpaWbPlusError {
+    #[error("Could not calculate Barbers Matrix.")]
+    BarbersMatrix(#[from] BarbersMatrixError),
+}
+
+/// An error type for DIRTLpawb+.
+#[derive(Error, Debug)]
+pub enum DirtLpaWbError {
+    Error(#[from] LpaWbPlusError),
+}
+
+impl std::fmt::Display for DirtLpaWbError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(fmt, "{}", self)
+    }
+}
 
 /// A struct just to hold the data from the output of the modularity
 /// computation.
@@ -93,10 +112,14 @@ impl LpaWbPlus {
 /// It is a wrapper of the LPAwb+ algorithm, exploring
 /// more parameter space. Therefore for large graphs, will
 /// take a lot longer to run.
-pub fn dirt_lpa_wb_plus(matrix: InteractionMatrix, mini: usize, reps: usize) -> LpaWbPlus {
+pub fn dirt_lpa_wb_plus(
+    matrix: InteractionMatrix,
+    mini: usize,
+    reps: usize,
+) -> Result<LpaWbPlus, DirtLpaWbError> {
     eprintln!("oxygraph: initiating DIRTLPAwb+ algorithm");
     // initial modularity
-    let mut a = lpa_wb_plus(matrix.clone(), None);
+    let mut a = lpa_wb_plus(matrix.clone(), None)?;
     // number of modules from this initial guess.
     let mut modules = a.row_labels.clone();
     modules.sort();
@@ -109,7 +132,7 @@ pub fn dirt_lpa_wb_plus(matrix: InteractionMatrix, mini: usize, reps: usize) -> 
     if module_no - mini > 0 {
         for aa in mini..module_no {
             for i in 0..reps {
-                let b = lpa_wb_plus(matrix.clone(), Some(aa));
+                let b = lpa_wb_plus(matrix.clone(), Some(aa))?;
                 let mut inner_modules = b.row_labels.clone();
                 inner_modules.sort();
                 inner_modules.dedup();
@@ -125,7 +148,7 @@ pub fn dirt_lpa_wb_plus(matrix: InteractionMatrix, mini: usize, reps: usize) -> 
             }
         }
     }
-    a
+    Ok(a)
 }
 
 /// Label propagation algorithm for weighted bipartite networks that finds modularity.
@@ -134,7 +157,10 @@ pub fn dirt_lpa_wb_plus(matrix: InteractionMatrix, mini: usize, reps: usize) -> 
 ///
 /// Translated from the R code here with permission from the author:
 /// Stephen Beckett ( https://github.com/sjbeckett/weighted-modularity-LPAwbPLUS )
-pub fn lpa_wb_plus(mut matrix: InteractionMatrix, init_module_guess: Option<usize>) -> LpaWbPlus {
+pub fn lpa_wb_plus(
+    mut matrix: InteractionMatrix,
+    init_module_guess: Option<usize>,
+) -> Result<LpaWbPlus, LpaWbPlusError> {
     // Make sure the smallest matrix dimension represent the red labels by making
     // them the rows (if matrix is transposed here, will be transposed back at the end)
     let mut row_len = matrix.rownames.len();
@@ -152,7 +178,7 @@ pub fn lpa_wb_plus(mut matrix: InteractionMatrix, init_module_guess: Option<usiz
     let mat_sum = matrix.sum_matrix();
     let col_marginals = matrix.col_sums();
     let row_marginals = matrix.row_sums();
-    let b_matrix = matrix.barbers_matrix();
+    let b_matrix = matrix.barbers_matrix()?;
 
     // initialise labels
     // columns are hosts, rows are parasites
@@ -218,18 +244,18 @@ pub fn lpa_wb_plus(mut matrix: InteractionMatrix, init_module_guess: Option<usiz
     let modularity = out_list2.2;
 
     if flipped == 1 {
-        return LpaWbPlus {
+        return Ok(LpaWbPlus {
             row_labels: column_labels,
             column_labels: row_labels,
             modularity,
-        };
+        });
     }
 
-    LpaWbPlus {
+    Ok(LpaWbPlus {
         row_labels,
         column_labels,
         modularity,
-    }
+    })
 }
 
 /// Returns the sum of the diagonal of a 2D Array<f64>.
@@ -333,6 +359,10 @@ fn stage_one_lpa_wbdash(
     // label lengths
     let blue_label_length = blue_labels.len();
     let red_label_length = red_labels.len();
+
+    // this should always be true
+    assert!(row_marginals.len() == red_label_length);
+    assert!(col_marginals.len() == blue_label_length);
 
     // red and blue 1D degree arrays.
     let mut total_red_degrees: Array1<f64> = Array1::zeros(
@@ -783,7 +813,7 @@ mod test {
 
         int_mat.inner = arr2(&[[1.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 0.0, 1.0]]);
 
-        let LpaWbPlus { modularity, .. } = lpa_wb_plus(int_mat, None);
+        let LpaWbPlus { modularity, .. } = lpa_wb_plus(int_mat, None).unwrap();
 
         // kind of hacky way to test, but couldn't be bothered
         // to add another crate to test float equivalence.
