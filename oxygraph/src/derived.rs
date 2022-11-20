@@ -136,17 +136,25 @@ impl DerivedGraph {
 /// There are two, one for the upper stratum (parasites),
 /// and one for the lower stratum (hosts).
 pub struct DerivedGraphs {
+    /// A derived graph of the parasites.
     pub parasites: DerivedGraph,
+    /// A derived graph of the hosts.
     pub hosts: DerivedGraph,
 }
 
-/// So we can label the stats.
+/// Derived graph statistics.
 pub struct DerivedGraphStats {
+    /// The number of parasite nodes in the graph.
     pub parasite_nodes: usize,
+    /// The number of parasite edges in the graph.
     pub parasite_edges: usize,
+    /// The number of parasite edges where the weight is > 1.
     pub parasite_edges_filtered: usize,
+    /// The number of host nodes.
     pub host_nodes: usize,
+    /// The number of host edges.
     pub host_edges: usize,
+    /// The number of host edges where the weight > 1.
     pub host_edges_filtered: usize,
 }
 
@@ -156,13 +164,11 @@ impl DerivedGraphs {
         let parasites = &self.parasites.0;
         let hosts = &self.hosts.0;
 
-        let p_nodes = parasites.node_count();
-        let h_nodes = hosts.node_count();
-        let p_edges = parasites.edge_count();
-        let h_edges = hosts.edge_count();
+        let parasite_nodes = parasites.node_count();
+        let host_nodes = hosts.node_count();
+        let parasite_edges = parasites.edge_count();
+        let host_edges = hosts.edge_count();
 
-        // maybe not so helpful. Maybe we want edge count
-        // where weight > 1?
         let p_edge_fil: Vec<_> = parasites
             .edge_references()
             .filter(|e| *e.weight() > 1)
@@ -171,13 +177,13 @@ impl DerivedGraphs {
             .edge_references()
             .filter(|e| *e.weight() > 1)
             .collect();
-        // TODO: better return type.
+
         DerivedGraphStats {
-            parasite_nodes: p_nodes,
-            parasite_edges: p_edges,
+            parasite_nodes,
+            parasite_edges,
             parasite_edges_filtered: p_edge_fil.len(),
-            host_nodes: h_nodes,
-            host_edges: h_edges,
+            host_nodes,
+            host_edges,
             host_edges_filtered: h_edge_fil.len(),
         }
     }
