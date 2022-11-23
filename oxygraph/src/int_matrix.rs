@@ -48,8 +48,8 @@ impl fmt::Display for InteractionMatrix {
             temp_string.pop();
             output_string += &format!("{}\n", temp_string);
         }
-        write!(f, "# Row names: {}\n", self.rownames.join(", "))?;
-        write!(f, "# Columns names: {}\n", self.colnames.join(", "))?;
+        writeln!(f, "# Row names: {}", self.rownames.join(", "))?;
+        writeln!(f, "# Columns names: {}", self.colnames.join(", "))?;
         write!(f, "{}", output_string)
     }
 }
@@ -193,60 +193,56 @@ impl InteractionMatrix {
         }
 
         // if we have a modularity plot
-        match modularity_plot_data {
-            Some(rects) => {
-                // destructure the plot data
-                let PlotData {
-                    rows,
-                    cols,
-                    modules,
-                } = rects;
+        if let Some(rects) = modularity_plot_data {
+            // destructure the plot data
+            let PlotData {
+                rows,
+                cols,
+                modules,
+            } = rects;
 
-                // keep track of cumulative column & row sizes
-                let mut cumulative_col_size = 0;
-                let mut cumulative_row_size = 0;
+            // keep track of cumulative column & row sizes
+            let mut cumulative_col_size = 0;
+            let mut cumulative_row_size = 0;
 
-                // iterate over the modules
-                for module in 0..modules.len() {
-                    // get this row size and the previous row size information
-                    let row_size = rows.iter().filter(|e| **e == modules[module]).count();
-                    let prev_row_size = rows
-                        .iter()
-                        .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
-                        .count();
-                    // and the same for the columns
-                    let col_size = cols.iter().filter(|e| **e == modules[module]).count();
-                    let prev_col_size = cols
-                        .iter()
-                        .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
-                        .count();
+            // iterate over the modules
+            for module in 0..modules.len() {
+                // get this row size and the previous row size information
+                let row_size = rows.iter().filter(|e| **e == modules[module]).count();
+                let prev_row_size = rows
+                    .iter()
+                    .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                    .count();
+                // and the same for the columns
+                let col_size = cols.iter().filter(|e| **e == modules[module]).count();
+                let prev_col_size = cols
+                    .iter()
+                    .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                    .count();
 
-                    // as a by-product of the unwrap_or() on the .get() function above,
-                    // skip the first iteration in the cumulative sums.
-                    if module > 0 {
-                        cumulative_col_size += prev_col_size;
-                        cumulative_row_size += prev_row_size;
-                    }
-
-                    // rect height and widths are multiples of the column and the
-                    // row lengths.
-                    let rect_width = col_size as f64 * x_spacing;
-                    let rect_height = row_size as f64 * y_spacing;
-
-                    // we then need to translate the rects the appropriate
-                    // amount, offset by the cumulative column and row sizes.
-                    let translate = format!(
-                        "translate({} {})",
-                        (cumulative_col_size as f64 * x_spacing) + MARGIN_LR,
-                        (cumulative_row_size as f64 * y_spacing) + MARGIN_LR
-                    );
-
-                    // append to the SVG data.
-                    svg_data += &format!("<rect x=\"0\" y=\"0\" width=\"{rect_width}\" height=\"{rect_height}\" style=\"fill: none; stroke: red; stroke-width: 2px;\" transform=\"{translate}\"/>");
+                // as a by-product of the unwrap_or() on the .get() function above,
+                // skip the first iteration in the cumulative sums.
+                if module > 0 {
+                    cumulative_col_size += prev_col_size;
+                    cumulative_row_size += prev_row_size;
                 }
+
+                // rect height and widths are multiples of the column and the
+                // row lengths.
+                let rect_width = col_size as f64 * x_spacing;
+                let rect_height = row_size as f64 * y_spacing;
+
+                // we then need to translate the rects the appropriate
+                // amount, offset by the cumulative column and row sizes.
+                let translate = format!(
+                    "translate({} {})",
+                    (cumulative_col_size as f64 * x_spacing) + MARGIN_LR,
+                    (cumulative_row_size as f64 * y_spacing) + MARGIN_LR
+                );
+
+                // append to the SVG data.
+                svg_data += &format!("<rect x=\"0\" y=\"0\" width=\"{rect_width}\" height=\"{rect_height}\" style=\"fill: none; stroke: red; stroke-width: 2px;\" transform=\"{translate}\"/>");
             }
-            // it's just the ol' interaction matrix!
-            None => (),
         }
 
         let svg = format!(

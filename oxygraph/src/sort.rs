@@ -5,6 +5,7 @@
 
 use ndarray::prelude::*;
 use ndarray::{Data, RemoveAxis, Zip};
+use thiserror::Error;
 
 use std::cmp::Ordering;
 use std::ptr::copy_nonoverlapping;
@@ -29,6 +30,12 @@ pub fn sort_by_indices<T>(data: &mut [T], mut indices: Vec<usize>) {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum PermutationError {
+    #[error("Permutation index check incorrect in ndarray sort.")]
+    FromIndices,
+}
+
 /// Type invariant: Each index appears exactly once
 #[derive(Clone, Debug)]
 pub struct Permutation {
@@ -37,12 +44,12 @@ pub struct Permutation {
 
 impl Permutation {
     /// Checks if the permutation is correct
-    pub fn from_indices(v: Vec<usize>) -> Result<Self, ()> {
+    pub fn from_indices(v: Vec<usize>) -> Result<Self, PermutationError> {
         let perm = Permutation { indices: v };
         if perm.correct() {
             Ok(perm)
         } else {
-            Err(())
+            Err(PermutationError::FromIndices)
         }
     }
 

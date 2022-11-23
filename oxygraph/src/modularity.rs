@@ -31,7 +31,8 @@ pub enum DirtLpaWbError {
 
 impl std::fmt::Display for DirtLpaWbError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(fmt, "{}", self)
+        let dis = self;
+        write!(fmt, "{}", dis)
     }
 }
 
@@ -71,12 +72,8 @@ impl LpaWbPlus {
             array_from_col.sort_axis_by(Axis(0), |i, j| array_from_col[i] < array_from_col[j]);
 
         // sort the rows/cols
-        let rows = array_from_row
-            .clone()
-            .permute_axis(Axis(0), &array_from_row_permutation);
-        let cols = array_from_col
-            .clone()
-            .permute_axis(Axis(0), &array_from_col_permutation);
+        let rows = array_from_row.permute_axis(Axis(0), &array_from_row_permutation);
+        let cols = array_from_col.permute_axis(Axis(0), &array_from_col_permutation);
 
         // find the number of modules
         let mut uniq_rows = rows.clone().into_raw_vec();
@@ -276,9 +273,9 @@ fn weighted_modularity(
         for cc in 0..blue_labels.len() {
             let kroneckerdelta = red_labels[rr] == blue_labels[cc];
             if kroneckerdelta {
-                hold_sum = hold_sum + (b_matrix[[rr, cc]] * 1.0);
+                hold_sum += b_matrix[[rr, cc]] * 1.0;
             } else {
-                hold_sum = hold_sum + (b_matrix[[rr, cc]] * 0.0);
+                hold_sum += b_matrix[[rr, cc]] * 0.0;
             }
         }
     }
@@ -393,8 +390,7 @@ fn stage_one_lpa_wbdash(
         if red_deg_index.is_nan() {
             total_red_degrees[red_labels[aa] as usize] = row_marginals[aa];
         } else {
-            total_red_degrees[red_labels[aa] as usize] =
-                total_red_degrees[red_labels[aa] as usize] + row_marginals[aa];
+            total_red_degrees[red_labels[aa] as usize] += row_marginals[aa];
         }
     }
 
@@ -406,8 +402,7 @@ fn stage_one_lpa_wbdash(
             if total_blue_degrees[blue_labels[bb] as usize].is_nan() {
                 total_blue_degrees[blue_labels[bb] as usize] = col_marginals[bb];
             } else {
-                total_blue_degrees[blue_labels[bb] as usize] =
-                    total_blue_degrees[blue_labels[bb] as usize] + col_marginals[bb];
+                total_blue_degrees[blue_labels[bb] as usize] += col_marginals[bb];
             }
         }
     } else {
@@ -441,8 +436,7 @@ fn division(red_labels: &mut Array1<f64>, blue_labels: &mut Array1<f64>) -> Vec<
     let blue_label_set: HashSet<_> = blue_labels.iter().map(|e| *e as usize).collect();
 
     red_label_set
-        .intersection(&blue_label_set)
-        .map(|e| *e)
+        .intersection(&blue_label_set).copied()
         .collect()
 }
 
@@ -617,7 +611,7 @@ fn local_maximisation(
 ) {
     // find the score for the current partition
     let mut qb_after = weighted_modularity_2(
-        &b_matrix,
+        b_matrix,
         mat_sum,
         red_labels.to_owned(),
         blue_labels.to_owned(),
@@ -661,9 +655,8 @@ fn local_maximisation(
         let blue_label_choices = Array::from(blue_label_choices_vec);
 
         for bb in 0..blue_labels.len() {
-            if blue_labels[bb].is_nan() == false {
-                total_blue_degrees[blue_labels[bb] as usize] =
-                    total_blue_degrees[blue_labels[bb] as usize] - col_marginals[bb];
+            if !blue_labels[bb].is_nan() {
+                total_blue_degrees[blue_labels[bb] as usize] -= col_marginals[bb];
             }
 
             let mut change_blue_label_test: Array1<f64> = Array1::zeros(blue_label_choices.len());
@@ -712,8 +705,7 @@ fn local_maximisation(
             }
 
             // Update total marginals on new labelling
-            total_blue_degrees[blue_labels[bb] as usize] =
-                total_blue_degrees[blue_labels[bb] as usize] + col_marginals[bb]
+            total_blue_degrees[blue_labels[bb] as usize] += col_marginals[bb]
         }
 
         // now we do the same for the red labels
@@ -728,8 +720,7 @@ fn local_maximisation(
         let red_label_choices = Array::from(red_label_choices_vec);
 
         for aa in 0..red_labels.len() {
-            total_red_degrees[red_labels[aa] as usize] =
-                total_red_degrees[red_labels[aa] as usize] - row_marginals[aa];
+            total_red_degrees[red_labels[aa] as usize] -= row_marginals[aa];
 
             let mut change_red_label_test: Array1<f64> = Array1::zeros(red_label_choices.len());
             change_red_label_test.fill(NAN);
@@ -777,11 +768,10 @@ fn local_maximisation(
             }
 
             // Update total marginals on new labelling
-            total_red_degrees[red_labels[aa] as usize] =
-                total_red_degrees[red_labels[aa] as usize] + row_marginals[aa]
+            total_red_degrees[red_labels[aa] as usize] += row_marginals[aa]
         }
 
-        qb_after = weighted_modularity(&b_matrix, mat_sum, &red_labels, &blue_labels);
+        qb_after = weighted_modularity(b_matrix, mat_sum, red_labels, blue_labels);
 
         if qb_after <= qb_before {
             *red_labels = old_red_labels;

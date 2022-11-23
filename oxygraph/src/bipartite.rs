@@ -111,8 +111,8 @@ impl BipartiteGraph {
             // does the map contain the node?
             let contains_node = colour_map.contains_key(&node);
             // now get the neighbours of this node.
-            let neighbours: Vec<NodeIndex> = self.0.neighbors_undirected(node).collect();
-            let no_neighbours = neighbours.len();
+
+            let no_neighbours = self.0.neighbors_undirected(node).count();
 
             if contains_node || no_neighbours == 0 {
                 continue;
@@ -122,7 +122,7 @@ impl BipartiteGraph {
             let mut queue = vec![node];
             colour_map.insert(node, true);
 
-            while queue.len() > 0 {
+            while !queue.is_empty() {
                 let v = queue.pop().unwrap();
                 let c = !colour_map.get(&v).unwrap();
                 let inner_neighbours: Vec<NodeIndex> = self.0.neighbors_undirected(v).collect();
@@ -237,11 +237,12 @@ impl BipartiteGraph {
     /// Create a graph from a DSV, given the specific input criteria.
     fn create_graph_from_dsv(input: Vec<Row>) -> Self {
         // create a unique vector of nodes
-        let froms: Vec<&String> = input.iter().map(|e| &e.from).collect();
-        let tos: Vec<&String> = input.iter().map(|e| &e.to).collect();
-
-        // collect into nodes, sort, dedup
-        let mut nodes: Vec<&String> = froms.into_iter().chain(tos.into_iter()).collect();
+        let mut nodes: Vec<&String> = input
+            .iter()
+            .map(|e| &e.from)
+            .chain(input.iter().map(|e| &e.to))
+            .collect();
+        // sort, dedup
         nodes.sort();
         nodes.dedup();
 
@@ -273,6 +274,7 @@ impl BipartiteGraph {
     }
 
     /// Extract the nodes from each stratum of a bipartite graph.
+    /// FIXME: change return type here.
     pub fn get_parasite_host_from_graph(
         &self,
     ) -> (Vec<(NodeIndex, &String)>, Vec<(NodeIndex, &String)>) {
@@ -284,9 +286,7 @@ impl BipartiteGraph {
         // so we iterate over the nodes
         for (node, w) in graph.node_references() {
             // for this node, does it have any outgoing edges?
-            let out: Vec<NodeIndex> = graph.neighbors_directed(node.id(), Outgoing).collect();
-            // if it has outgoing edges
-            let is_parasite = out.len() > 0;
+            let is_parasite = graph.neighbors_directed(node.id(), Outgoing).count() > 0;
 
             if is_parasite {
                 parasites.push((node.id(), w));
@@ -305,10 +305,11 @@ impl BipartiteGraph {
 
         let mut dist = Vec::new();
         for (node, spp) in graph.node_references() {
-            let neighbours_in: Vec<_> = graph.edges_directed(node, Direction::Incoming).collect();
-            let neighbours_out: Vec<_> = graph.edges_directed(node, Direction::Outgoing).collect();
-
-            dist.push((spp.clone(), neighbours_in.len() + neighbours_out.len()))
+            dist.push((
+                spp.clone(),
+                graph.edges_directed(node, Direction::Incoming).count()
+                    + graph.edges_directed(node, Direction::Outgoing).count(),
+            ))
         }
         dist
     }
@@ -330,17 +331,11 @@ impl BipartiteGraph {
 
         let mut biv_dist = Vec::new();
         for (node1, node2) in edge_list {
-            let neighbours1_in: Vec<_> = graph.edges_directed(node1, Direction::Incoming).collect();
-            let neighbours1_out: Vec<_> =
-                graph.edges_directed(node1, Direction::Outgoing).collect();
-
-            let neighbours2_in: Vec<_> = graph.edges_directed(node2, Direction::Incoming).collect();
-            let neighbours2_out: Vec<_> =
-                graph.edges_directed(node2, Direction::Outgoing).collect();
-
             biv_dist.push((
-                neighbours1_in.len() + neighbours1_out.len(),
-                neighbours2_in.len() + neighbours2_out.len(),
+                graph.edges_directed(node1, Direction::Incoming).count()
+                    + graph.edges_directed(node1, Direction::Outgoing).count(),
+                graph.edges_directed(node2, Direction::Incoming).count()
+                    + graph.edges_directed(node2, Direction::Outgoing).count(),
             ))
         }
         biv_dist
@@ -384,13 +379,10 @@ impl BipartiteGraph {
         // scaling the nodes by how many incoming connections they have.
         let mut incoming_nodes_vec = Vec::new();
         for (node, _) in hosts.iter() {
-            let out: Vec<NodeIndex> = graph.neighbors_directed(*node, Outgoing).collect();
-
-            if out.len() > 0 {
+            if graph.neighbors_directed(*node, Outgoing).count() > 0 {
                 continue;
             } else {
-                let r_vec: Vec<NodeIndex> = graph.neighbors_directed(*node, Incoming).collect();
-                incoming_nodes_vec.push(r_vec.len());
+                incoming_nodes_vec.push(graph.neighbors_directed(*node, Incoming).count());
             }
         }
 
@@ -404,8 +396,7 @@ impl BipartiteGraph {
             // store the x and y coords of parasites
             let x = ((i - 1) as f64 * host_spacing) + (host_spacing / 2.0) + MARGIN_LR;
             let y = (height as f64 / NODE_SCALE) * 3.0;
-            let r_vec: Vec<NodeIndex> = graph.neighbors_directed(*node, Incoming).collect();
-            let r = r_vec.len();
+            let r = graph.neighbors_directed(*node, Incoming).count();
             // for edge drawing later
             host_pos.insert(*node, (x, y));
 
@@ -450,7 +441,7 @@ impl BipartiteGraph {
             // to allow for self parasitism (or association I should say)!
             let (x2, y2) = host_pos
                 .get(&to)
-                .unwrap_or(parasite_pos.get(&from).unwrap());
+                .unwrap_or_else(|| parasite_pos.get(&from).unwrap());
 
             edge_links += &format!(
                 "<line x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\" stroke=\"black\" stroke-width=\"{}\"/>\n{}",

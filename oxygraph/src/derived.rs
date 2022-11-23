@@ -96,7 +96,7 @@ impl DerivedGraph {
 
             let (x1, y1) = pos.get(&from).unwrap();
             // to allow for self parasitism (or association I should say)!
-            let (x2, y2) = pos.get(&to).unwrap_or(pos.get(&from).unwrap());
+            let (x2, y2) = pos.get(&to).unwrap_or_else(|| pos.get(&from).unwrap());
             // and a title string
             let edge_title_string = format!(
                 "{} connections between {} and {}",
@@ -169,22 +169,16 @@ impl DerivedGraphs {
         let parasite_edges = parasites.edge_count();
         let host_edges = hosts.edge_count();
 
-        let p_edge_fil: Vec<_> = parasites
-            .edge_references()
-            .filter(|e| *e.weight() > 1)
-            .collect();
-        let h_edge_fil: Vec<_> = hosts
-            .edge_references()
-            .filter(|e| *e.weight() > 1)
-            .collect();
-
         DerivedGraphStats {
             parasite_nodes,
             parasite_edges,
-            parasite_edges_filtered: p_edge_fil.len(),
+            parasite_edges_filtered: parasites
+                .edge_references()
+                .filter(|e| *e.weight() > 1)
+                .count(),
             host_nodes,
             host_edges,
-            host_edges_filtered: h_edge_fil.len(),
+            host_edges_filtered: hosts.edge_references().filter(|e| *e.weight() > 1).count(),
         }
     }
 
@@ -244,7 +238,7 @@ impl DerivedGraphs {
                     // now add the edges in our parasite graph
                     let overlap: HashSet<_> = n1.1.intersection(n2.1).collect();
                     // only add an edge if the overlap.len() > 0 ?
-                    if overlap.len() > 0 {
+                    if !overlap.is_empty() {
                         ungraph.0.add_edge(*n1.0, *n2.0, overlap.len());
                     }
                 }

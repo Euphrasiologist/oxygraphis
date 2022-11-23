@@ -251,7 +251,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let dg_plot = *dg_matches
                         .get_one::<bool>("plotdg")
                         .expect("defaulted by clap.");
-                    let stratum = &*dg_matches
+                    let stratum = dg_matches
                         .get_one::<String>("stratum")
                         .expect("defaulted by clap.");
                     let remove = *dg_matches
@@ -344,7 +344,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                 .get_one::<bool>("plot")
                 .expect("defaulted by clap?");
 
-            let calculation = &*sm_matches
+            let calculation = sm_matches
                 .get_one::<String>("calculation")
                 .expect("defaulted by clap.");
 
