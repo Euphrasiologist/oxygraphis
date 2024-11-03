@@ -16,6 +16,7 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1.0.64"
+calm_io = "0.1.1"
 clap = { version = "4.0.8", features = ["cargo"] }
 oxygraph = { path = "./oxygraph" }
 rayon = "1.5.3"

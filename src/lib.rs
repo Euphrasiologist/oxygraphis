@@ -1,4 +1,5 @@
-use anyhow::{Error, Result, bail};
+use anyhow::{bail, Error, Result};
+use calm_io::*;
 use clap::{arg, crate_version, value_parser, ArgMatches, Command};
 use oxygraph::{
     BipartiteGraph, BipartiteStats, DerivedGraphStats, DerivedGraphs, InteractionMatrix,
@@ -37,7 +38,11 @@ pub fn cli() -> Command {
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(
-                    arg!(-d --degreedistribution "Return the degree distribution of a bipartite graph.")
+                    arg!(-d --degrees "Return the degrees of a bipartite graph.")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
+                    arg!(-e --degreedistribution "Return the degree distribution of a bipartite graph.")
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(
@@ -147,7 +152,10 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
             let bipartite_plot = *sub_matches
                 .get_one::<bool>("plotbp")
                 .expect("defaulted by clap.");
-            let degee_distribution = *sub_matches
+            let degrees = *sub_matches
+                .get_one::<bool>("degrees")
+                .expect("defaulted by clap.");
+            let degreedistribution = *sub_matches
                 .get_one::<bool>("degreedistribution")
                 .expect("defaulted by clap.");
             let bivariate_distribution = *sub_matches
@@ -163,7 +171,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                 oxygraph::bipartite::Strata::Yes(_) => (),
                 // tell the user which nodes are the offenders.
                 oxygraph::bipartite::Strata::No => {
-                    eprintln!("Warning: The input graph is not (fully) bipartite.");
+                    stderrln!("Warning: The input graph is not (fully) bipartite.")?;
                 }
             }
 
@@ -175,17 +183,26 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         // make the plot dims CLI args.
                         // but 600 x 400 for now.
                         bpgraph.plot(1600, 700);
-                    } else if degee_distribution {
-                        let dist = bpgraph.degree_distribution();
-                        println!("spp\tvalue");
-                        for (s, v) in dist {
-                            println!("{}\t{}", s, v);
+                    } else if degrees {
+                        let degs = bpgraph.degrees();
+                        stdoutln!("spp\tvalue")?;
+                        for (s, v) in degs {
+                            stdoutln!("{}\t{}", s, v)?;
+                        }
+                    } else if degreedistribution {
+                        let (bin_size, deg_dist) = bpgraph.degree_distribution();
+                        // print the distribution
+                        stdoutln!("degree\tcount")?;
+
+                        for (deg, count) in deg_dist {
+                            let bin_end = deg + bin_size - 1;
+                            stdoutln!("{}-{}\t{}", deg, bin_end, count)?;
                         }
                     } else if bivariate_distribution {
                         let biv_dist = bpgraph.bivariate_degree_distribution();
-                        println!("node1\tnode2");
+                        stdoutln!("node1\tnode2")?;
                         for (n1, n2) in biv_dist {
-                            println!("{}\t{}", n1, n2);
+                            stdoutln!("{}\t{}", n1, n2)?;
                         }
                     } else {
                         // default subcommand output
@@ -195,8 +212,8 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             no_hosts,
                             no_edges,
                         } = bpgraph.stats();
-                        println!("#_parasite_nodes\t#_host_nodes\t#_total_edges");
-                        println!("{}\t{}\t{}", no_parasites, no_hosts, no_edges);
+                        stdoutln!("#_parasite_nodes\t#_host_nodes\t#_total_edges")?;
+                        stdoutln!("{}\t{}\t{}", no_parasites, no_hosts, no_edges)?;
                     }
                 }
                 // user called interaction-matrix
@@ -223,9 +240,9 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         // sort and make nodf.
                         im_mat.sort();
                         let nodf = im_mat.nodf();
-                        println!("NODF\n{}", nodf);
+                        stdoutln!("NODF\n{}", nodf)?;
                     } else if print {
-                        println!("{}", im_mat);
+                        stdoutln!("{}", im_mat)?;
                     } else {
                         // default subcommand output
                         let InteractionMatrixStats {
@@ -234,14 +251,14 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             no_poss_ints,
                             perc_ints,
                         } = im_mat.stats();
-                        println!("#_rows\t#_cols\t#_poss_ints\tperc_ints");
-                        println!(
+                        stdoutln!("#_rows\t#_cols\t#_poss_ints\tperc_ints")?;
+                        stdoutln!(
                             "{}\t{}\t{}\t{}",
                             no_rows,
                             no_cols,
                             no_poss_ints,
                             perc_ints * 100.0
-                        );
+                        )?;
                     }
                 }
                 // user called derived-graphs
@@ -274,8 +291,8 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             host_edges_filtered,
                         } = dgs.stats();
 
-                        println!("p_nodes\tp_edges\tp_edge_fil\th_nodes\th_edges\th_edge_fil");
-                        println!(
+                        stdoutln!("p_nodes\tp_edges\tp_edge_fil\th_nodes\th_edges\th_edge_fil")?;
+                        stdoutln!(
                             "{}\t{}\t{}\t{}\t{}\t{}",
                             parasite_nodes,
                             parasite_edges,
@@ -283,7 +300,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             host_nodes,
                             host_edges,
                             host_edges_filtered
-                        );
+                        )?;
                     }
                 }
                 Some(("modularity", mod_matches)) => {
@@ -312,16 +329,16 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         };
                         let modularity = modularity_obj.modularity;
                         modularity_obj.plot(int_mat);
-                        eprintln!("{} modularity: {}", kind, modularity);
+                        stderrln!("{} modularity: {}", kind, modularity)?;
                     } else if dirtlpawbplus {
                         // probably let user input reps in future.
                         let LpaWbPlus { modularity, .. } =
                             oxygraph::modularity::dirt_lpa_wb_plus(int_mat, 2, 2)?;
-                        println!("DIRTLPAwb+\n{}", modularity);
+                        stdoutln!("DIRTLPAwb+\n{}", modularity)?;
                     } else {
                         let LpaWbPlus { modularity, .. } =
                             oxygraph::modularity::lpa_wb_plus(int_mat, None)?;
-                        println!("LPAwb+\n{}", modularity);
+                        stdoutln!("LPAwb+\n{}", modularity)?;
                     }
                 }
                 _ => unreachable!("Should never reach here."),
@@ -368,7 +385,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             im_mat.sort();
                             let nodf = im_mat.nodf();
                             if !nodf.is_nan() {
-                                println!("{}", nodf);
+                                stdoutln!("{}", nodf)?;
                             }
                             Ok::<(), Error>(())
                         }
@@ -376,14 +393,14 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
                             let LpaWbPlus { modularity, .. } =
                                 oxygraph::modularity::lpa_wb_plus(im_mat, None)?;
-                            println!("{}", modularity);
+                            stdoutln!("{}", modularity)?;
                             Ok::<(), Error>(())
                         }
                         "dirtlpawbplus" => {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
                             let LpaWbPlus { modularity, .. } =
                                 oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 2, 2)?;
-                            println!("{}", modularity);
+                            stdoutln!("{}", modularity)?;
                             Ok::<(), Error>(())
                         }
                         // not sure how to implement these two yet, or how useful they will be.

@@ -17,7 +17,7 @@ use petgraph::{
 };
 use rand::{self, seq::SliceRandom};
 use serde_derive::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -210,6 +210,7 @@ impl BipartiteGraph {
             no_edges: *no_edges,
         }
     }
+
     /// Function to read into this graph struct from a DSV.
     ///
     /// Input must hav three columns in the order:
@@ -297,9 +298,9 @@ impl BipartiteGraph {
         (parasites, hosts)
     }
 
-    /// Degree distribution. Simply calculate the degree for each node in the
+    /// Degree of each node in the graph. Simply calculate the degree for each node in the
     /// graph. Optionally split by stratum?
-    pub fn degree_distribution(&self) -> Vec<(String, usize)> {
+    pub fn degrees(&self) -> Vec<(String, usize)> {
         // I imagine there will be tabular data output?
         let graph = &self.0;
 
@@ -312,6 +313,46 @@ impl BipartiteGraph {
             ))
         }
         dist
+    }
+
+    pub fn degree_distribution(&self) -> (usize, BTreeMap<usize, usize>) {
+        let degrees = self
+            .degrees()
+            .iter()
+            .map(|(_, d)| *d)
+            .collect::<Vec<usize>>();
+
+        fn calculate_iqr(sorted_degrees: &[usize]) -> f64 {
+            let q1_index = sorted_degrees.len() / 4;
+            let q3_index = 3 * sorted_degrees.len() / 4;
+            let q1 = sorted_degrees[q1_index] as f64;
+            let q3 = sorted_degrees[q3_index] as f64;
+            q3 - q1
+        }
+
+        if degrees.is_empty() {
+            return (0, BTreeMap::new());
+        }
+
+        // Sort degrees for IQR calculation
+        let mut sorted_degrees = degrees.clone();
+        sorted_degrees.sort_unstable();
+
+        // Calculate the bin width using Freedman-Diaconis rule
+        let iqr = calculate_iqr(&sorted_degrees);
+        let bin_width = (2.0 * iqr / (degrees.len() as f64).cbrt()).max(1.0).round() as usize;
+
+        // Determine the minimum and maximum degrees
+        let min_degree = *sorted_degrees.first().unwrap();
+
+        // Initialize an ordered histogram using BTreeMap
+        let mut histogram = BTreeMap::new();
+        for &degree in &degrees {
+            let bin = ((degree - min_degree) / bin_width) * bin_width + min_degree;
+            *histogram.entry(bin).or_insert(0) += 1;
+        }
+
+        (bin_width, histogram)
     }
 
     /// Bivariate degree distributions. Enumerate all adjacent nodes
