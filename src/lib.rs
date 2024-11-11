@@ -70,9 +70,11 @@ pub fn cli() -> Command {
                     .arg(
                         arg!(-p --plotdg "Render an SVG derived graph of a stratum.")
                             .action(clap::ArgAction::SetTrue)
+                            .requires("stratum")
                     )
                     .arg(
                         arg!(-s --stratum [STRATUM] "The stratum to display.")
+                            .num_args(1)
                             .default_value("host")
                             .value_parser(["host", "parasite"])
                     )
@@ -80,6 +82,12 @@ pub fn cli() -> Command {
                         arg!(-r --remove [REMOVE] "Edges with fewer than this number of connections are removed from the graph.")
                             .default_value("2.0")
                             .value_parser(value_parser!(f64))
+                    )
+                    .arg(
+                        arg!(-d --diameter [DIAMETER] "The diameter (width and height; plot is square) of the plot.")
+                            .default_value("600.0")
+                            .value_parser(value_parser!(f64))
+
                     )
                 )
                 .subcommand(Command::new("modularity")
@@ -274,11 +282,14 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let remove = *dg_matches
                         .get_one::<f64>("remove")
                         .expect("defaulted by clap.");
+                    let diameter = *dg_matches
+                        .get_one::<f64>("diameter")
+                        .expect("defaulted by clap.");
 
                     if dg_plot {
                         match stratum.as_str() {
-                            "host" => dgs.hosts.plot(600.0, remove),
-                            "parasite" => dgs.parasites.plot(600.0, remove),
+                            "host" => dgs.hosts.plot(diameter, remove),
+                            "parasite" => dgs.parasites.plot(diameter, remove),
                             _ => unreachable!("Should never reach here."),
                         }
                     } else {
@@ -322,22 +333,20 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         let kind: &str;
                         let modularity_obj = if dirtlpawbplus {
                             kind = "DIRTLPAwb+";
-                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat.clone(), 2, 2)?
+                            int_mat.dirt_lpa_wb_plus(2, 2)?
                         } else {
                             kind = "LPAwb+";
-                            oxygraph::modularity::lpa_wb_plus(int_mat.clone(), None)?
+                            oxygraph::modularity::lpa_wb_plus(int_mat.inner.clone(), None)?
                         };
                         let modularity = modularity_obj.modularity;
                         modularity_obj.plot(int_mat);
                         stderrln!("{} modularity: {}", kind, modularity)?;
                     } else if dirtlpawbplus {
                         // probably let user input reps in future.
-                        let LpaWbPlus { modularity, .. } =
-                            oxygraph::modularity::dirt_lpa_wb_plus(int_mat, 2, 2)?;
+                        let LpaWbPlus { modularity, .. } = int_mat.dirt_lpa_wb_plus(2, 2)?;
                         stdoutln!("DIRTLPAwb+\n{}", modularity)?;
                     } else {
-                        let LpaWbPlus { modularity, .. } =
-                            oxygraph::modularity::lpa_wb_plus(int_mat, None)?;
+                        let LpaWbPlus { modularity, .. } = int_mat.lpa_wb_plus(None)?;
                         stdoutln!("LPAwb+\n{}", modularity)?;
                     }
                 }
@@ -391,15 +400,13 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         }
                         "lpawbplus" => {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                            let LpaWbPlus { modularity, .. } =
-                                oxygraph::modularity::lpa_wb_plus(im_mat, None)?;
+                            let LpaWbPlus { modularity, .. } = im_mat.lpa_wb_plus(None)?;
                             stdoutln!("{}", modularity)?;
                             Ok::<(), Error>(())
                         }
                         "dirtlpawbplus" => {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                            let LpaWbPlus { modularity, .. } =
-                                oxygraph::modularity::dirt_lpa_wb_plus(im_mat, 2, 2)?;
+                            let LpaWbPlus { modularity, .. } = im_mat.dirt_lpa_wb_plus(2, 2)?;
                             stdoutln!("{}", modularity)?;
                             Ok::<(), Error>(())
                         }
