@@ -3,8 +3,12 @@
 //! possible combinations of hosts/parasites (or sites/species).
 
 use crate::bipartite::BipartiteGraph;
+use crate::modularity;
+use crate::modularity::DirtLpaWbError;
+use crate::modularity::LpaWbPlusError;
 use crate::modularity::PlotData;
 use crate::sort::*;
+use crate::LpaWbPlus;
 use crate::MARGIN_LR;
 use itertools::Itertools;
 use ndarray::{Array2, ArrayBase, Axis, Dim, OwnedRepr};
@@ -83,7 +87,8 @@ impl InteractionMatrix {
             perc_ints,
         }
     }
-    /// Initiate a new [`InteractionMatrix`]
+    /// Initiate a new [`InteractionMatrix`] with a shape of `rn` rows
+    /// and `cn` columns.
     pub fn new(rn: usize, cn: usize) -> Self {
         // outer vec is the number of rows,
         // inner is the number of columns
@@ -277,7 +282,7 @@ impl InteractionMatrix {
     /// this function.
     ///
     /// TODO: refactor this code.
-    pub fn nodf(&mut self) -> f64  {
+    pub fn nodf(&mut self) -> f64 {
         // following https://nadiah.org/2021/07/16/nodf-nestedness-worked-example
         // rows first
         let mut pos_row_set_vec = Vec::new();
@@ -353,6 +358,18 @@ impl InteractionMatrix {
         mean
     }
 
+    pub fn lpa_wb_plus(
+        self,
+        init_module_guess: Option<usize>,
+    ) -> Result<LpaWbPlus, LpaWbPlusError> {
+        modularity::lpa_wb_plus(self.inner, init_module_guess)
+    }
+
+    pub fn dirt_lpa_wb_plus(&self, mini: usize, reps: usize) -> Result<LpaWbPlus, DirtLpaWbError> {
+        modularity::dirt_lpa_wb_plus(self, mini, reps)
+    }
+
+    // Make sure the smallest matrix dimension represent the red labels by making
     /// Sum of an interaction matrix. Should be equal to the number of
     /// edges in an unweighted graph.
     pub fn sum_matrix(&self) -> f64 {

@@ -10,7 +10,7 @@
 //! use oxygraph;
 //! use oxygraph::bipartite::Strata;
 //! use std::path::PathBuf;
-//! 
+//!
 //! let path = PathBuf::from("./path/to/bipartite.tsv");
 //!
 //! // load into a BipartiteGraph structure
