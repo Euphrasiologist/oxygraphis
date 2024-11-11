@@ -17,12 +17,10 @@ An example which illustrates initiation of the graph from a TSV:
 ```rust
 // main bipartite graph struct
 use oxygraph::BipartiteGraph;
-// Enum for which strata there are in a bipartite graph
+// Which strata there are in a bipartite graph
 use oxygraph::bipartite::Strata;
 // Interaction matrix struct
 use oxygraph::InteractionMatrix;
-// LPAWB+ algorithm
-use oxygraph::modularity::lpa_wb_plus;
 
 // read in some data
 // in the format:
@@ -52,7 +50,7 @@ println!("{}", im.nodf().unwrap());
 let rand_graph = BipartiteGraph::random(80, 100, 250).unwrap();
 let mut im_rand = InteractionMatrix::from_bipartite(rand_graph);
 // and calculate modularity
-let modularity = lpa_wb_plus(rand_graph, None);
+let modularity = rand_graph.lpa_wb_plus(None);
 println!("{:?}", modularity);
 
 ```

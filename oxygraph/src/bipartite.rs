@@ -15,7 +15,7 @@ use petgraph::{
     Direction::{self, Incoming, Outgoing},
     Graph,
 };
-use rand::{self, seq::SliceRandom};
+use rand::{self, seq::IndexedRandom};
 use serde_derive::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;

@@ -160,7 +160,7 @@ where
             // panic-critical begin: we must not panic
             // forget moved array elements but not its vec
             // old_storage drops empty
-            let mut old_storage = self.into_raw_vec();
+            let (mut old_storage, _) = self.into_raw_vec_and_offset();
             old_storage.set_len(0);
 
             result.assume_init()

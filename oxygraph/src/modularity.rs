@@ -9,7 +9,7 @@
 use crate::int_matrix::{BarbersMatrixError, Matrix};
 use crate::{sort::*, InteractionMatrix};
 use ndarray::{Array, Array1, Array2, Axis};
-use rand::seq::{IteratorRandom, SliceRandom};
+use rand::seq::{IndexedRandom, IteratorRandom};
 use rand::thread_rng;
 use std::collections::HashSet;
 use thiserror::Error;
@@ -84,7 +84,7 @@ impl LpaWbPlus {
         let cols = array_from_col.permute_axis(Axis(0), &array_from_col_permutation);
 
         // find the number of modules
-        let mut uniq_rows = rows.clone().into_raw_vec();
+        let (mut uniq_rows, _) = rows.clone().into_raw_vec_and_offset();
         uniq_rows.sort();
         uniq_rows.dedup();
 
@@ -262,7 +262,6 @@ pub fn lpa_wb_plus(
 /// - A `f64` value representing the trace of the matrix.
 ///
 /// The trace is calculated by summing the elements along the main diagonal.
-
 pub fn trace(matrix: &Matrix) -> f64 {
     // Sum of diagonal elements
     matrix.diag().sum()
@@ -282,7 +281,6 @@ pub fn trace(matrix: &Matrix) -> f64 {
 ///
 /// The function iterates over each red and blue label pair, calculates the Kronecker delta
 /// based on label equality, and accumulates the weighted modularity based on `b_matrix` values.
-
 pub fn weighted_modularity(
     b_matrix: &Matrix,
     mat_sum: f64,
@@ -320,7 +318,6 @@ pub fn weighted_modularity(
 /// The function constructs two indicator matrices (`labelmat1` and `labelmat2`) that map unique labels
 /// to original labels in `red_labels` and `blue_labels`. Then it computes the modularity as the trace
 /// of the product `LABELMAT1 * BMatrix * LABELMAT2`, divided by the total matrix sum.
-
 pub fn weighted_modularity2(
     b_matrix: &Matrix,
     mat_sum: f64,

@@ -393,7 +393,9 @@ impl InteractionMatrix {
         &self,
     ) -> Result<ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>, BarbersMatrixError> {
         // compute row sums and turn into 2d array with 1 column
-        let row_sums = &self.row_sums().into_shape((self.rownames.len(), 1))?;
+        let row_sums = &self
+            .row_sums()
+            .into_shape_with_order((self.rownames.len(), 1))?;
         // col sums remain as a 1d array.
         let col_sums = &self.col_sums();
 
