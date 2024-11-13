@@ -382,7 +382,6 @@ impl BipartiteGraph {
         biv_dist
     }
 
-    /// Make an SVG Plot of a bipartite graph.
     pub fn plot(&self, width: i32, height: i32) {
         let graph = &self.0;
 
@@ -498,6 +497,223 @@ impl BipartiteGraph {
     {edge_links}
     {parasite_nodes}
     {host_nodes}
+</svg>
+        "#
+        );
+
+        println!("{}", svg);
+    }
+
+    pub fn plot_prop(&self, width: i32, height: i32) {
+        let graph = &self.0;
+
+        let canvas_width = width as f64 - (2.0 * MARGIN_LR);
+        let upper_stratum_height = height as f64 / 4.0;
+        let lower_stratum_height = height as f64 / 4.0 * 3.0;
+
+        let rect_height = 20.0;
+        let inner_margin = 3.0;
+
+        // calculate total number of parasite connections
+        let (parasites, hosts) = &self.get_parasite_host_from_graph();
+
+        eprintln!("Number of parasites: {}", parasites.len());
+        eprintln!("Number of hosts: {}", hosts.len());
+
+        let mut parasite_connections = vec![];
+        for (node, s) in parasites.iter() {
+            parasite_connections.push((
+                graph.neighbors_directed(*node, Incoming).count() as f64
+                    + graph.neighbors_directed(*node, Outgoing).count() as f64,
+                node,
+                s,
+            ));
+        }
+        let total_parasite_connections =
+            parasite_connections.iter().map(|(e, _, _)| e).sum::<f64>();
+
+        // now iterate over the parasites and draw the polygons
+        let mut cumsum_node_connections = 0.0;
+        let mut parasite_polygons = String::new();
+        let mut parasite_pos = HashMap::new();
+
+        let (y1_u, y2_u) = (upper_stratum_height, upper_stratum_height + rect_height);
+        for (i, (node_connections, node, parasite)) in parasite_connections.iter().enumerate() {
+            // special case for first node
+            let (x1, x2) = if i == 0 {
+                cumsum_node_connections += node_connections;
+                cumsum_node_connections += MARGIN_LR;
+                let pos = (
+                    MARGIN_LR,
+                    ((cumsum_node_connections / total_parasite_connections) * canvas_width)
+                        - inner_margin,
+                );
+
+                // for drawing edges
+                parasite_pos.insert(**node, (pos.0, pos.0, pos.1, y1_u, y2_u));
+
+                pos
+            } else {
+                let curr_conns = cumsum_node_connections;
+                cumsum_node_connections += node_connections;
+                let pos = (
+                    ((curr_conns / total_parasite_connections) * canvas_width) + inner_margin,
+                    ((cumsum_node_connections / total_parasite_connections) * canvas_width)
+                        - inner_margin,
+                );
+                // for drawing edges
+                parasite_pos.insert(**node, (pos.0, pos.0, pos.1, y1_u, y2_u));
+
+                pos
+            };
+
+            // now make the polygon element
+            let polygon = format!(
+                r#"<polygon points="{x2},{y1_u} {x1},{y1_u} {x1},{y2_u} {x2},{y2_u}" fill="green" stroke="black" stroke-width="1" ><title>{parasite}</title></polygon>\n{end}"#,
+                x1 = x1,
+                y1_u = y1_u,
+                x2 = x2,
+                y2_u = y2_u,
+                parasite = parasite,
+                end = if i >= 1 { "\t" } else { "" }
+            );
+
+            parasite_polygons += &polygon;
+        }
+
+        // hosts
+        let mut host_connections = vec![];
+        for (node, s) in hosts.iter() {
+            host_connections.push((
+                graph.neighbors_directed(*node, Incoming).count() as f64
+                    + graph.neighbors_directed(*node, Outgoing).count() as f64,
+                node,
+                s,
+            ));
+        }
+
+        let total_host_connections = host_connections.iter().map(|(e, _, _)| e).sum::<f64>();
+
+        // now we iterate over the hosts and draw the polygons
+        let mut cumsum_node_connections = 0.0;
+        let mut host_polygons = String::new();
+        let mut host_pos = HashMap::new();
+
+        let (y1_l, y2_l) = (lower_stratum_height, lower_stratum_height + rect_height);
+        for (i, (node_connections, node, host)) in host_connections.iter().enumerate() {
+            // special case for first node
+            let (x1, x2) = if i == 0 {
+                cumsum_node_connections += node_connections;
+                cumsum_node_connections += MARGIN_LR;
+                let pos = (
+                    MARGIN_LR,
+                    ((cumsum_node_connections / total_host_connections) * canvas_width)
+                        - inner_margin,
+                );
+
+                host_pos.insert(**node, (pos.0, pos.0, pos.1, y1_l, y2_l));
+
+                pos
+            } else {
+                let curr_conns = cumsum_node_connections;
+                cumsum_node_connections += node_connections;
+                let pos = (
+                    ((curr_conns / total_host_connections) * canvas_width) + inner_margin,
+                    ((cumsum_node_connections / total_host_connections) * canvas_width)
+                        - inner_margin,
+                );
+
+                host_pos.insert(**node, (pos.0, pos.0, pos.1, y1_l, y2_l));
+                pos
+            };
+
+            // now make the polygon element
+            let polygon = format!(
+                r#"<polygon points="{x2},{y1_l} {x1},{y1_l} {x1},{y2_l} {x2},{y2_l}" fill="red" stroke="black" stroke-width="1"><title>{host}</title></polygon>\n{end}"#,
+                x1 = x1,
+                y1_l = y1_l,
+                x2 = x2,
+                y2_l = y2_l,
+                host = host,
+                end = if i >= 1 { "\t" } else { "" }
+            );
+
+            host_polygons += &polygon;
+        }
+
+        // and now the edges using polygons again
+        let mut edge_polygons = String::new();
+        for (mut i, edge) in graph.edge_references().enumerate() {
+            i += 1;
+            let from = edge.source();
+            let to = edge.target();
+            let fitness = *edge.weight();
+
+            // we need to mutate the x coords of the polygons
+            let (x1_update_p, x1_p, x2_p, y1_p, y2_p) = parasite_pos.get_mut(&from).unwrap();
+            let (x1_update_h, x1_h, x2_h, y1_h, y2_h) = host_pos.get_mut(&to).unwrap();
+
+            // get total number of connections for the parasite
+            let total_parasite_connections = graph.neighbors_directed(from, Outgoing).count()
+                as f64
+                + graph.neighbors_directed(from, Incoming).count() as f64;
+
+            // get the number of connections for the parasite from the current host
+            let p_to_h = graph
+                .neighbors_directed(from, Outgoing)
+                .filter(|e| e == &to)
+                .count();
+
+            // now scale the x coordinates of the polygons by the number of connections
+            let parasite_pos_width = *x2_p - *x1_p;
+            let current_parasite_width =
+                parasite_pos_width * (p_to_h as f64 / total_parasite_connections);
+
+            // goes from x1_update to x1_update + current_parasite_width
+            let x1_update_p_clone = x1_update_p.clone();
+            let (p_poly_1, p_poly_2) = (
+                x1_update_p_clone,
+                x1_update_p_clone + current_parasite_width,
+            );
+
+            // the hosts
+
+            // get total number of connections for the parasite
+            let total_host_connections = graph.neighbors_directed(to, Outgoing).count() as f64
+                + graph.neighbors_directed(to, Incoming).count() as f64;
+
+            let h_from_p = graph
+                .neighbors_directed(to, Incoming)
+                .filter(|e| e == &from)
+                .count();
+
+            // now scale the x coordinates of the polygons by the number of connections for the host
+            let host_pos_width = *x2_h - *x1_h;
+            let current_host_width = host_pos_width * (h_from_p as f64 / total_host_connections);
+
+            // goes from x1_update to x1_update + current_parasite_width
+            let x1_update_h_clone = x1_update_h.clone();
+            let (h_poly_1, h_poly_2) = (x1_update_h_clone, x1_update_h_clone + current_host_width);
+
+            // now update the x's
+            *x1_update_p += current_parasite_width;
+            *x1_update_h += current_host_width;
+
+            // and create the polygon edges
+            let edge_polygon = format!(
+                r#"<polygon points="{p_poly_1},{y2_p} {p_poly_2},{y2_p} {h_poly_1},{y1_h} {h_poly_2},{y1_h}" fill-opacity="50%" />\n{}"#,
+                if i >= 1 { "\t" } else { "" }
+            );
+            edge_polygons += &edge_polygon;
+        }
+
+        let svg = format!(
+            r#"<svg version="1.1"
+    width="{width}" height="{height}"
+    xmlns="http://www.w3.org/2000/svg">
+    {parasite_polygons}
+    {host_polygons}
+    {edge_polygons}
 </svg>
         "#
         );

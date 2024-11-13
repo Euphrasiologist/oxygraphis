@@ -35,6 +35,12 @@ pub fn cli() -> Command {
                 )
                 .arg(
                     arg!(-p --plotbp "Render an SVG bipartite graph plot.")
+                        .conflicts_with("plotbp2")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
+                    arg!(-q --plotbp2 "Render an SVG bipartite graph plot with proportional node size.")
+                        .conflicts_with("plotbp")
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(
@@ -160,6 +166,9 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
             let bipartite_plot = *sub_matches
                 .get_one::<bool>("plotbp")
                 .expect("defaulted by clap.");
+            let bipartite_plot_2 = *sub_matches
+                .get_one::<bool>("plotbp2")
+                .expect("defaulted by clap.");
             let degrees = *sub_matches
                 .get_one::<bool>("degrees")
                 .expect("defaulted by clap.");
@@ -191,6 +200,8 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         // make the plot dims CLI args.
                         // but 600 x 400 for now.
                         bpgraph.plot(1600, 700);
+                    } else if bipartite_plot_2 {
+                        bpgraph.plot_prop(1600, 700);
                     } else if degrees {
                         let degs = bpgraph.degrees();
                         stdoutln!("spp\tvalue")?;
