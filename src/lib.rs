@@ -2,7 +2,7 @@ use anyhow::{bail, Error, Result};
 use calm_io::*;
 use clap::{arg, crate_version, value_parser, ArgMatches, Command};
 use oxygraph::{
-    BipartiteGraph, BipartiteStats, DerivedGraphStats, DerivedGraphs, InteractionMatrix,
+    bipartite, BipartiteGraph, BipartiteStats, DerivedGraphStats, DerivedGraphs, InteractionMatrix,
     InteractionMatrixStats, LpaWbPlus,
 };
 use rayon::prelude::*;
@@ -16,7 +16,7 @@ pub fn cli() -> Command {
         .bin_name("oxygraphis")
         .arg_required_else_help(true)
         .version(crate_version!())
-        .author("Max Brown <euphrasiamax@gmail.com>")
+        .author("Max Brown <max.carter-brown@aru.ac.uk>")
         .subcommand(
             Command::new("bipartite")
                 .about("Generate and analyse bipartite graphs.")
@@ -30,7 +30,7 @@ pub fn cli() -> Command {
                         .value_parser(value_parser!(PathBuf)),
                 )
                 .arg(
-                    arg!([DELIMITER] "Specify the delimiter of the DSV; we assume tabs.")
+                    arg!(-d --delimiter [DELIMITER] "Specify the delimiter of the DSV; we assume tabs.")
                         .required(false),
                 )
                 .arg(
@@ -109,6 +109,10 @@ pub fn cli() -> Command {
                             .conflicts_with("lpawbplus")
                     )
                     .arg(
+                        arg!(-m --modules "Compute the modules of a bipartite graph.")
+                            .action(clap::ArgAction::SetTrue)
+                    )
+                    .arg(
                         arg!(-p --plotmod "Plot the interaction matrix of a bipartite network, sorted to maximise modularity.")
                             .action(clap::ArgAction::SetTrue)
                     )
@@ -181,13 +185,14 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
 
             // everything requires the bipartite graph
             // and must currently go through a DSV.
+            // input and delimiter
             let bpgraph = BipartiteGraph::from_dsv(input, delimiter)?;
 
             match bpgraph.is_bipartite() {
                 // don't care here
-                oxygraph::bipartite::Strata::Yes(_) => (),
+                bipartite::Strata::Yes(_) => (),
                 // tell the user which nodes are the offenders.
-                oxygraph::bipartite::Strata::No => {
+                bipartite::Strata::No => {
                     stderrln!("Warning: The input graph is not (fully) bipartite.")?;
                 }
             }
@@ -333,29 +338,60 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let dirtlpawbplus = *mod_matches
                         .get_one::<bool>("dirtlpawbplus")
                         .expect("defaulted by clap.");
+                    let modules = *mod_matches
+                        .get_one::<bool>("modules")
+                        .expect("defaulted by clap.");
                     let plot = *mod_matches
                         .get_one::<bool>("plotmod")
                         .expect("defaulted by clap.");
 
                     // create the interaction matrix
-                    let int_mat = InteractionMatrix::from_bipartite(bpgraph);
+                    let mut int_mat = InteractionMatrix::from_bipartite(bpgraph);
 
                     if plot {
                         let kind: &str;
-                        let modularity_obj = if dirtlpawbplus {
+                        let mut modularity_obj = if dirtlpawbplus {
                             kind = "DIRTLPAwb+";
-                            int_mat.dirt_lpa_wb_plus(2, 2)?
+                            int_mat.clone().dirt_lpa_wb_plus(2, 2)?
                         } else {
                             kind = "LPAwb+";
-                            oxygraph::modularity::lpa_wb_plus(int_mat.inner.clone(), None)?
+                            int_mat.clone().lpa_wb_plus(None)?
                         };
                         let modularity = modularity_obj.modularity;
-                        modularity_obj.plot(int_mat);
+                        let modules = modularity_obj.plot(int_mat);
                         stderrln!("{} modularity: {}", kind, modularity)?;
+                        for (i, (h, p)) in modules.into_iter().enumerate() {
+                            for (host, parasite) in h.iter().zip(p.iter()) {
+                                stderrln!("{}\t{}\t{}", i, host, parasite)?;
+                            }
+                        }
                     } else if dirtlpawbplus {
                         // probably let user input reps in future.
                         let LpaWbPlus { modularity, .. } = int_mat.dirt_lpa_wb_plus(2, 2)?;
                         stdoutln!("DIRTLPAwb+\n{}", modularity)?;
+                    } else if modules {
+                        if dirtlpawbplus {
+                            let dlpa = int_mat.dirt_lpa_wb_plus(2, 2)?;
+                            let modules = dlpa.modules(&mut int_mat);
+
+                            // print the modules
+                            for (i, (hosts, parasites)) in modules.into_iter().enumerate() {
+                                // print the module
+                                for (host, parasite) in hosts.iter().zip(parasites.iter()) {
+                                    stdoutln!("{}\t{}\t{}", i, host, parasite)?;
+                                }
+                            }
+                        } else {
+                            let lpa = int_mat.clone().lpa_wb_plus(None)?;
+                            let modules = lpa.modules(&mut int_mat);
+                            // print the modules
+                            for (i, (hosts, parasites)) in modules.into_iter().enumerate() {
+                                // print the module
+                                for (host, parasite) in hosts.iter().zip(parasites.iter()) {
+                                    stdoutln!("{}\t{}\t{}", i, host, parasite)?;
+                                }
+                            }
+                        }
                     } else {
                         let LpaWbPlus { modularity, .. } = int_mat.lpa_wb_plus(None)?;
                         stdoutln!("LPAwb+\n{}", modularity)?;

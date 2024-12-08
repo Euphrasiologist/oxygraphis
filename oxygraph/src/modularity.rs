@@ -46,7 +46,7 @@ pub struct LpaWbPlus {
 /// To plot the modules on an interaction plot, these three
 /// pieces of data must be known. The rows, columns, and
 /// the vector of modules.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PlotData {
     pub rows: Array1<usize>,
     pub cols: Array1<usize>,
@@ -54,11 +54,8 @@ pub struct PlotData {
 }
 
 impl LpaWbPlus {
-    /// Generate a plot.
-    ///
-    /// `int_mat` is the original interaction matrix used to
-    /// generate the `LpaWbPlus` object
-    pub fn plot(&self, mut int_mat: InteractionMatrix) {
+    // TODO: a function to return the modules with the species in them
+    pub fn modules(&self, int_mat: &mut InteractionMatrix) -> Vec<(Vec<String>, Vec<String>)> {
         // get the permutation order of the rows
         let array_from_row: Array1<usize> = Array::from(
             self.row_labels
@@ -89,7 +86,118 @@ impl LpaWbPlus {
         uniq_rows.dedup();
 
         // sort the original interaction matrix
+        int_mat.inner = int_mat
+            .inner
+            .clone()
+            .permute_axis(Axis(0), &array_from_row_permutation);
+        int_mat.inner = int_mat
+            .inner
+            .clone()
+            .permute_axis(Axis(1), &array_from_col_permutation);
 
+        fn sort_strings_by_indices(strings: Vec<String>, indices: Vec<usize>) -> Vec<String> {
+            // Pair the indices with the strings
+            let mut paired: Vec<(usize, String)> =
+                indices.into_iter().zip(strings.into_iter()).collect();
+
+            // Sort the pairs by the indices
+            paired.sort_by_key(|(index, _)| *index);
+
+            // Extract the sorted strings
+            paired.into_iter().map(|(_, string)| string).collect()
+        }
+
+        // and reorder the rows and cols of the interaction matrix
+        int_mat.rownames =
+            sort_strings_by_indices(int_mat.rownames.clone(), array_from_row_permutation.indices);
+
+        int_mat.colnames =
+            sort_strings_by_indices(int_mat.colnames.clone(), array_from_col_permutation.indices);
+
+        // now get the modules. The logic for this actually resides in int_matrix.rs
+        // TODO: fix up the redundancy in this code.
+
+        let mut per_module: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+        // keep track of cumulative column & row sizes
+        let mut cumulative_col_size = 0;
+        let mut cumulative_row_size = 0;
+
+        for module in 0..uniq_rows.len() {
+            // get this row size and the previous row size information
+            let row_size = rows.iter().filter(|e| **e == uniq_rows[module]).count();
+            let prev_row_size = rows
+                .iter()
+                .filter(|e| **e == *uniq_rows.get(module - 1).unwrap_or(&module))
+                .count();
+            // and the same for the columns
+            let col_size = cols.iter().filter(|e| **e == uniq_rows[module]).count();
+            let prev_col_size = cols
+                .iter()
+                .filter(|e| **e == *uniq_rows.get(module - 1).unwrap_or(&module))
+                .count();
+
+            let hosts =
+                int_mat.rownames[cumulative_row_size..cumulative_row_size + row_size].to_vec();
+            let parasites =
+                int_mat.colnames[cumulative_col_size..cumulative_col_size + col_size].to_vec();
+
+            per_module.push((hosts, parasites));
+
+            // as a by-product of the unwrap_or() on the .get() function above,
+            // skip the first iteration in the cumulative sums.
+            if module > 0 {
+                cumulative_col_size += prev_col_size;
+                cumulative_row_size += prev_row_size;
+            }
+        }
+
+        per_module
+    }
+    /// Generate a plot.
+    ///
+    /// `int_mat` is the original interaction matrix used to
+    /// generate the `LpaWbPlus` object
+    pub fn plot(&mut self, mut int_mat: InteractionMatrix) -> Vec<(Vec<String>, Vec<String>)> {
+        if int_mat.inner.nrows() > int_mat.inner.ncols() {
+            // swap the row labels and col labels
+            let rn = self.row_labels.clone();
+            let cn = self.column_labels.clone();
+
+            self.row_labels = cn;
+            self.column_labels = rn;
+        }
+
+        let array_from_row: Array1<usize> = Array::from(
+            self.row_labels
+                .iter()
+                .map(|e| e.unwrap())
+                .collect::<Vec<usize>>(),
+        );
+
+        let array_from_row_permutation =
+            array_from_row.sort_axis_by(Axis(0), |i, j| array_from_row[i] < array_from_row[j]);
+
+        // and the columns
+        let array_from_col: Array1<usize> = Array::from(
+            self.column_labels
+                .iter()
+                .map(|e| e.unwrap())
+                .collect::<Vec<usize>>(),
+        );
+
+        let array_from_col_permutation =
+            array_from_col.sort_axis_by(Axis(0), |i, j| array_from_col[i] < array_from_col[j]);
+
+        // sort the rows/cols
+        let rows = array_from_row.permute_axis(Axis(0), &array_from_row_permutation);
+        let cols = array_from_col.permute_axis(Axis(0), &array_from_col_permutation);
+
+        // find the number of modules
+        let (mut uniq_rows, _) = rows.clone().into_raw_vec_and_offset();
+        uniq_rows.sort();
+        uniq_rows.dedup();
+
+        // sort the original interaction matrix
         int_mat.inner = int_mat
             .inner
             .permute_axis(Axis(0), &array_from_row_permutation);
@@ -97,14 +205,32 @@ impl LpaWbPlus {
             .inner
             .permute_axis(Axis(1), &array_from_col_permutation);
 
-        int_mat.plot(
-            1000,
-            Some(PlotData {
-                rows,
-                cols,
-                modules: uniq_rows,
-            }),
-        );
+        // given the sort_strings_by_indices function below
+        fn sort_strings_by_indices(strings: Vec<String>, indices: Vec<usize>) -> Vec<String> {
+            // Pair the indices with the strings
+            let mut paired: Vec<(usize, String)> =
+                indices.into_iter().zip(strings.into_iter()).collect();
+            // Sort the pairs by the indices
+            paired.sort_by_key(|(index, _)| *index);
+            // Extract the sorted strings
+            paired.into_iter().map(|(_, string)| string).collect()
+        }
+
+        // and sort the rownames and colnames from the original interaction matrix
+        int_mat.rownames =
+            sort_strings_by_indices(int_mat.rownames.clone(), array_from_row_permutation.indices);
+        int_mat.colnames =
+            sort_strings_by_indices(int_mat.colnames.clone(), array_from_col_permutation.indices);
+
+        let plot_data = PlotData {
+            rows,
+            cols,
+            modules: uniq_rows,
+        };
+
+        int_mat.plot(1000, Some(plot_data.clone()));
+
+        self.modules(&mut int_mat)
     }
 }
 
@@ -146,7 +272,7 @@ pub fn dirt_lpa_wb_plus(
     reps: usize,
 ) -> Result<LpaWbPlus, DirtLpaWbError> {
     // initial modularity
-    let mut a = lpa_wb_plus(matrix.inner.clone(), None)?;
+    let mut a = lpa_wb_plus(matrix.clone(), None)?;
     // number of modules from this initial guess.
     let mut modules = a.row_labels.clone();
     modules.sort();
@@ -157,7 +283,7 @@ pub fn dirt_lpa_wb_plus(
     if module_no - mini > 0 {
         for aa in mini..module_no {
             for _ in 0..reps {
-                let b = lpa_wb_plus(matrix.inner.clone(), Some(aa))?;
+                let b = lpa_wb_plus(matrix.clone(), Some(aa))?;
                 let mut inner_modules = b.row_labels.clone();
                 inner_modules.sort();
                 inner_modules.dedup();
@@ -186,9 +312,10 @@ pub fn dirt_lpa_wb_plus(
 /// # Returns
 /// - Tuple containing row labels, column labels, and the modularity score.
 pub fn lpa_wb_plus(
-    mut matrix: Matrix,
+    matrix: InteractionMatrix,
     initial_module_guess: Option<usize>,
 ) -> Result<LpaWbPlus, LpaWbPlusError> {
+    let mut matrix = matrix.inner;
     // Determine if matrix should be transposed (red labels represent rows)
     let mut flipped = false;
     if matrix.nrows() > matrix.ncols() {
@@ -490,13 +617,6 @@ pub fn stage_two_lpa_wbdash(
             for div1_idx in 0..num_div - 1 {
                 let mod1 = divisions_found_vec[div1_idx];
 
-                // Debugging the merging attempt
-
-                eprintln!(
-                    "Attempting to merge: Mod1 = {:?}, Div2Check = {:?}",
-                    mod1, divisions_found_vec[div1_idx]
-                );
-
                 for div2_idx in div1_idx + 1..num_div {
                     let mod2 = divisions_found_vec[div2_idx];
 
@@ -518,13 +638,9 @@ pub fn stage_two_lpa_wbdash(
                     // Calculate modularity for the test configuration
                     let qq = weighted_modularity2(b_matrix, mat_sum, &check_red, &check_blue);
 
-                    eprintln!("Modularity for this merge attempt: {}", qq);
-
                     if qq > qb_now {
                         // Check for better modularity score by further division adjustments
                         let mut found_better = false;
-
-                        eprintln!("Improvement found! Merging divisions.");
 
                         for &division in &divisions_found_vec {
                             // Test moving all instances of `division` to `mod1` or `mod2`

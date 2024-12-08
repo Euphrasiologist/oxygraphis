@@ -72,7 +72,7 @@ pub type Fitness = f64;
 /// A directed graph with two levels, parasite, and host.
 /// Could be also used for plants and pollinators. Or other
 /// such things.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BipartiteGraph(pub Graph<Species, Fitness>);
 
 /// This enum might replace `get_parasite_host_from_graph`.
@@ -195,6 +195,7 @@ impl BipartiteGraph {
 
         Ok(BipartiteGraph(graph))
     }
+
     /// Print some stats when the default subcommand is called.
     pub fn stats(&self) -> BipartiteStats {
         let (parasites, hosts) = &self.get_parasite_host_from_graph();
@@ -382,6 +383,8 @@ impl BipartiteGraph {
         biv_dist
     }
 
+    /// Plot the bipartite graph using SVG. The parasites and hosts
+    /// are plotted as circles, and the edges are plotted as lines.
     pub fn plot(&self, width: i32, height: i32) {
         let graph = &self.0;
 
@@ -647,11 +650,12 @@ impl BipartiteGraph {
             i += 1;
             let from = edge.source();
             let to = edge.target();
-            let fitness = *edge.weight();
+            let _fitness = *edge.weight();
 
             // we need to mutate the x coords of the polygons
-            let (x1_update_p, x1_p, x2_p, y1_p, y2_p) = parasite_pos.get_mut(&from).unwrap();
-            let (x1_update_h, x1_h, x2_h, y1_h, y2_h) = host_pos.get_mut(&to).unwrap();
+            let (x1_update_p, x1_p, x2_p, _y1_p, y2_p) = parasite_pos.get_mut(&from).unwrap();
+            // FIXME: this unwrap panics
+            let (x1_update_h, x1_h, x2_h, y1_h, _y2_h) = host_pos.get_mut(&to).unwrap();
 
             // get total number of connections for the parasite
             let total_parasite_connections = graph.neighbors_directed(from, Outgoing).count()

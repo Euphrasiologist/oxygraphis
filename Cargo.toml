@@ -1,6 +1,6 @@
 [package]
 name = "oxygraphis"
-version = "0.1.63"
+version = "0.2.0"
 edition = "2021"
 repository = "https://github.com/Euphrasiologist/oxygraphis/"
 documentation = "https://docs.rs/oxygraphis"
@@ -17,6 +17,6 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0.64"
 calm_io = "0.1.1"
-clap = { version = "4.0.8", features = ["cargo"] }
+clap = { version = "4.5.23", features = ["cargo"] }
 oxygraph = { path = "./oxygraph" }
 rayon = "1.5.3"
