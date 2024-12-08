@@ -35,8 +35,8 @@ Commands:
   help       Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help     Print help information
-  -V, --version  Print version information
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
 #### Bipartite graphs
@@ -46,7 +46,7 @@ The `bipartite` subcommand.
 ```bash
 Generate and analyse bipartite graphs.
 
-Usage: oxygraphis bipartite [OPTIONS] <INPUT_DSV> [DELIMITER] [COMMAND]
+Usage: oxygraphis bipartite [OPTIONS] <INPUT_DSV> [COMMAND]
 
 Commands:
   interaction-matrix  Coerce a bipartite graph into an interaction matrix.
@@ -56,13 +56,15 @@ Commands:
 
 Arguments:
   <INPUT_DSV>  An input DSV with three headers only: from, to, and weight.
-  [DELIMITER]  Specify the delimiter of the DSV; we assume tabs.
 
 Options:
-  -p, --plotbp                 Render an SVG bipartite graph plot.
-  -d, --degreedistribution     Return the degree distribution of a bipartite graph.
-  -b, --bivariatedistribution  Return the bivariate degree distribution of a bipartite graph.
-  -h, --help                   Print help information
+  -d, --delimiter [<DELIMITER>]  Specify the delimiter of the DSV; we assume tabs.
+  -p, --plotbp                   Render an SVG bipartite graph plot.
+  -q, --plotbp2                  Render an SVG bipartite graph plot with proportional node size.
+  -d, --degrees                  Return the degrees of a bipartite graph.
+  -e, --degreedistribution       Return the degree distribution of a bipartite graph.
+  -b, --bivariatedistribution    Return the bivariate degree distribution of a bipartite graph.
+  -h, --help                     Print help
 ```
 
 The input must be a delimited file with three columns only:
@@ -86,10 +88,11 @@ Coerce a bipartite graph into two derived graphs.
 Usage: oxygraphis bipartite <INPUT_DSV> derived-graphs [OPTIONS]
 
 Options:
-  -p, --plotdg               Render an SVG derived graph of a stratum.
-  -s, --stratum [<STRATUM>]  The stratum to display. [default: host] [possible values: host, parasite]
-  -r, --remove [<REMOVE>]    Edges with fewer than this number of connections are removed from the graph. [default: 2.0]
-  -h, --help                 Print help information
+  -p, --plotdg                 Render an SVG derived graph of a stratum.
+  -s, --stratum <STRATUM>      The stratum to display. [default: host] [possible values: host, parasite]
+  -r, --remove [<REMOVE>]      Edges with fewer than this number of connections are removed from the graph. [default: 2.0]
+  -d, --diameter [<DIAMETER>]  The diameter (width and height; plot is square) of the plot. [default: 600.0]
+  -h, --help                   Print help
 ```
 
 #### Interaction matrix
@@ -105,7 +108,7 @@ Options:
       --print   Print the inner matrix as a TSV. Mainly for debugging.
   -p, --plotim  Render an SVG interaction matrix plot.
   -n, --nodf    Compute the NODF number of a *sorted* interaction matrix.
-  -h, --help    Print help information
+  -h, --help    Print help
 ```
 
 #### Modularity 
@@ -120,8 +123,9 @@ Usage: oxygraphis bipartite <INPUT_DSV> modularity [OPTIONS]
 Options:
   -l, --lpawbplus      Compute the modularity of a bipartite network using LPAwb+ algorithm.
   -d, --dirtlpawbplus  Compute the modularity of a bipartite network using DIRTLPAwb+ algorithm.
+  -m, --modules        Compute the modules of a bipartite graph.
   -p, --plotmod        Plot the interaction matrix of a bipartite network, sorted to maximise modularity.
-  -h, --help           Print help information
+  -h, --help           Print help
 ```
 
 #### Simulations
@@ -147,7 +151,7 @@ Options:
       --plot
           Plot the simulated bipartite network.
   -h, --help
-          Print help information
+          Print help
 ```
 
 ## Oxygraphis..?
