@@ -1,6 +1,6 @@
 [package]
 name = "oxygraphis"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 repository = "https://github.com/Euphrasiologist/oxygraphis/"
 documentation = "https://docs.rs/oxygraphis"
