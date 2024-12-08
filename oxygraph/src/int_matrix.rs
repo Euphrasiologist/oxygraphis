@@ -362,7 +362,7 @@ impl InteractionMatrix {
         self,
         init_module_guess: Option<usize>,
     ) -> Result<LpaWbPlus, LpaWbPlusError> {
-        modularity::lpa_wb_plus(self.inner, init_module_guess)
+        modularity::lpa_wb_plus(self, init_module_guess)
     }
 
     pub fn dirt_lpa_wb_plus(&self, mini: usize, reps: usize) -> Result<LpaWbPlus, DirtLpaWbError> {
