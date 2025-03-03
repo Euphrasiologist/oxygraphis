@@ -707,7 +707,7 @@ impl BipartiteGraph {
 
             // and create the polygon edges
             let edge_polygon = format!(
-                r#"<polygon points="{p_poly_1},{y2_p} {p_poly_2},{y2_p} {h_poly_1},{y1_h} {h_poly_2},{y1_h}" fill-opacity="50%" />\n{}"#,
+                r#"<polygon points="{p_poly_1},{y2_p} {p_poly_2},{y2_p} {h_poly_2},{y1_h} {h_poly_1},{y1_h}" fill-opacity="50%" />\n{}"#,
                 if i >= 1 { "\t" } else { "" }
             );
             edge_polygons += &edge_polygon;
