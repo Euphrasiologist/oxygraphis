@@ -545,7 +545,6 @@ impl BipartiteGraph {
             // special case for first node
             let (x1, x2) = if i == 0 {
                 cumsum_node_connections += node_connections;
-                cumsum_node_connections += MARGIN_LR;
                 let pos = (
                     MARGIN_LR,
                     ((cumsum_node_connections / total_parasite_connections) * canvas_width)
@@ -607,7 +606,6 @@ impl BipartiteGraph {
             // special case for first node
             let (x1, x2) = if i == 0 {
                 cumsum_node_connections += node_connections;
-                cumsum_node_connections += MARGIN_LR;
                 let pos = (
                     MARGIN_LR,
                     ((cumsum_node_connections / total_host_connections) * canvas_width)
