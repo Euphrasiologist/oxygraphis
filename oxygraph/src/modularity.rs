@@ -880,6 +880,7 @@ pub fn local_maximisation(
 mod test {
     use super::*;
     use crate::InteractionMatrix;
+    use calm_io::*;
 
     #[test]
     fn test_dirtlpawbplus() {
@@ -903,8 +904,8 @@ mod test {
             column_labels,
         } = dirt_lpa_wb_plus(&int_mat, 50000, 50000).unwrap();
 
-        eprintln!("{:?}", row_labels);
-        eprintln!("{:?}", column_labels);
+        let _ = stderrln!("{:?}", row_labels);
+        let _ = stderrln!("{:?}", column_labels);
 
         // this fails most of the time, sometimes it's what the author of the R code got.
         // I think this is because of the random nature of the algorithm, in the red label

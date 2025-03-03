@@ -8,6 +8,7 @@
 //! to the user. A bipartite graph can be checked, once created,
 //! with the `is_bipartite` method.
 
+use calm_io::*;
 use csv::ReaderBuilder;
 use petgraph::{
     graph::NodeIndex,
@@ -504,7 +505,7 @@ impl BipartiteGraph {
         "#
         );
 
-        println!("{}", svg);
+        let _ = stdoutln!("{}", svg);
     }
 
     pub fn plot_prop(&self, width: i32, height: i32) {
@@ -519,9 +520,11 @@ impl BipartiteGraph {
 
         // calculate total number of parasite connections
         let (parasites, hosts) = &self.get_parasite_host_from_graph();
+        // TODO: it's possible the hosts and parasites
+        // can be reordered here to increase visual appeal
 
-        eprintln!("Number of parasites: {}", parasites.len());
-        eprintln!("Number of hosts: {}", hosts.len());
+        let _ = stderrln!("Number of parasites: {}", parasites.len());
+        let _ = stderrln!("Number of hosts: {}", hosts.len());
 
         let mut parasite_connections = vec![];
         for (node, s) in parasites.iter() {
@@ -720,7 +723,7 @@ impl BipartiteGraph {
         "#
         );
 
-        println!("{}", svg);
+        let _ = stdoutln!("{}", svg);
     }
 
     /// Turn `BipartiteGraph` into a TSV.

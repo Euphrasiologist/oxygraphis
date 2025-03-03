@@ -6,6 +6,7 @@
 
 use crate::BipartiteGraph;
 use crate::{scale_fit, MARGIN_LR};
+use calm_io::*;
 use itertools::Itertools;
 use petgraph::{
     graph::{NodeIndex, UnGraph},
@@ -126,7 +127,7 @@ impl DerivedGraph {
 </svg>
         "#
         );
-        println!("{}", svg);
+        let _ = stdoutln!("{}", svg);
     }
 }
 
@@ -226,7 +227,7 @@ impl DerivedGraphs {
                     let n1_spp = match node_index_map.get(n1.0) {
                         Some(n) => n,
                         None => {
-                            println!("NodeIndex: {:?} not found", n1.0);
+                            let _ = stdoutln!("NodeIndex: {:?} not found", n1.0);
                             continue;
                         }
                     };

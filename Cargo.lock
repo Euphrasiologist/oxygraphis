@@ -347,6 +347,7 @@ dependencies = [
 name = "oxygraph"
 version = "0.2.5"
 dependencies = [
+ "calm_io",
  "csv",
  "itertools",
  "ndarray",
