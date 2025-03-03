@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "oxygraph"
-version = "0.2.5"
+version = "0.2.7"
 dependencies = [
  "calm_io",
  "csv",
@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "oxygraphis"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "calm_io",
