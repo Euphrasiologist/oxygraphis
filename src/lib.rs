@@ -193,7 +193,9 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                 bipartite::Strata::Yes(_) => (),
                 // tell the user which nodes are the offenders.
                 bipartite::Strata::No => {
-                    stderrln!("Warning: The input graph is not (fully) bipartite.")?;
+                    return Err(Error::msg(
+                        "Graph is not bipartite. Check the input file for errors.",
+                    ))
                 }
             }
 

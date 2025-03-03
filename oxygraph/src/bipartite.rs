@@ -655,7 +655,8 @@ impl BipartiteGraph {
 
             // we need to mutate the x coords of the polygons
             let (x1_update_p, x1_p, x2_p, _y1_p, y2_p) = parasite_pos.get_mut(&from).unwrap();
-            // FIXME: this unwrap panics
+            // FIXME: this unwrap panics; only when the graph is not bipartite
+            // I haven't been bothered yet to figure it out properly.
             let (x1_update_h, x1_h, x2_h, y1_h, _y2_h) = host_pos.get_mut(&to).unwrap();
 
             // get total number of connections for the parasite
