@@ -156,8 +156,72 @@ impl InteractionMatrix {
         int_max
     }
 
+    /// Get the modules, conditional on some plot data
+    pub fn modules(
+        &self,
+        modularity_plot_data: PlotData,
+    ) -> BTreeMap<usize, Vec<(String, String)>> {
+        let PlotData {
+            rows,
+            cols,
+            modules,
+        } = modularity_plot_data;
+        let parasites = self.rownames.len();
+        let hosts = self.colnames.len();
+        let mut modularity_labels = BTreeMap::new();
+        // keep track of cumulative column & row sizes
+        let mut cumulative_col_size = 0;
+        let mut cumulative_row_size = 0;
+
+        // iterate over the modules
+        for module in 0..modules.len() {
+            // get this row size and the previous row size information
+            let row_size = rows.iter().filter(|e| **e == modules[module]).count();
+            let prev_row_size = rows
+                .iter()
+                .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                .count();
+            // and the same for the columns
+            let col_size = cols.iter().filter(|e| **e == modules[module]).count();
+            let prev_col_size = cols
+                .iter()
+                .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                .count();
+
+            // as a by-product of the unwrap_or() on the .get() function above,
+            // skip the first iteration in the cumulative sums.
+            if module > 0 {
+                cumulative_col_size += prev_col_size;
+                cumulative_row_size += prev_row_size;
+            }
+
+            // add to the modules
+            let module_space = (cumulative_col_size..cumulative_col_size + col_size)
+                .cartesian_product(cumulative_row_size..cumulative_row_size + row_size)
+                .collect::<Vec<_>>();
+            let mut zipped = Vec::new();
+            for parasite in 0..parasites {
+                for host in 0..hosts {
+                    let is_assoc = self.inner[[parasite, host]] == 1.0;
+                    if module_space.contains(&(host, parasite)) && is_assoc {
+                        let p = self.rownames[parasite].clone();
+                        let h = self.colnames[host].clone();
+                        zipped.push((p, h));
+                    }
+                }
+            }
+            modularity_labels.insert(module, zipped);
+        }
+
+        modularity_labels
+    }
+
     /// Make an SVG interaction matrix plot. Prints to STDOUT.
-    pub fn plot(&self, width: i32, modularity_plot_data: Option<PlotData>) {
+    pub fn plot(
+        &self,
+        width: i32,
+        modularity_plot_data: Option<PlotData>,
+    ) -> Option<BTreeMap<usize, Vec<(String, String)>>> {
         // space on the x axis and y axis
         let x_spacing = (width as f64 - (MARGIN_LR * 2.0)) / self.colnames.len() as f64;
         let y_spacing = x_spacing;
@@ -200,7 +264,10 @@ impl InteractionMatrix {
         }
 
         // if we have a modularity plot
-        if let Some(rects) = modularity_plot_data {
+        let mut return_modules = false;
+
+        if let Some(rects) = modularity_plot_data.clone() {
+            return_modules = true;
             // destructure the plot data
             let PlotData {
                 rows,
@@ -264,7 +331,13 @@ impl InteractionMatrix {
             svg_data
         );
 
-        println!("{}", svg);
+        let _ = stdoutln!("{}", svg);
+
+        if return_modules {
+            Some(self.modules(modularity_plot_data.unwrap()))
+        } else {
+            None
+        }
     }
 
     /// Transpose an interaction matrix.

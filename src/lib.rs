@@ -109,10 +109,6 @@ pub fn cli() -> Command {
                             .conflicts_with("lpawbplus")
                     )
                     .arg(
-                        arg!(-m --modules "Compute the modules of a bipartite graph.")
-                            .action(clap::ArgAction::SetTrue)
-                    )
-                    .arg(
                         arg!(-p --plotmod "Plot the interaction matrix of a bipartite network, sorted to maximise modularity.")
                             .action(clap::ArgAction::SetTrue)
                     )
@@ -208,7 +204,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         // but 600 x 400 for now.
                         bpgraph.plot(1600, 700);
                     } else if bipartite_plot_2 {
-                        bpgraph.plot_prop(1600, 700);
+                        bpgraph.plot_prop(1800, 700);
                     } else if degrees {
                         let degs = bpgraph.degrees();
                         stdoutln!("spp\tvalue")?;
@@ -340,15 +336,12 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let dirtlpawbplus = *mod_matches
                         .get_one::<bool>("dirtlpawbplus")
                         .expect("defaulted by clap.");
-                    let modules = *mod_matches
-                        .get_one::<bool>("modules")
-                        .expect("defaulted by clap.");
                     let plot = *mod_matches
                         .get_one::<bool>("plotmod")
                         .expect("defaulted by clap.");
 
                     // create the interaction matrix
-                    let mut int_mat = InteractionMatrix::from_bipartite(bpgraph);
+                    let int_mat = InteractionMatrix::from_bipartite(bpgraph);
 
                     if plot {
                         let kind: &str;
@@ -360,40 +353,17 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             int_mat.clone().lpa_wb_plus(None)?
                         };
                         let modularity = modularity_obj.modularity;
-                        let modules = modularity_obj.plot(int_mat);
+                        let modules = modularity_obj.plot(int_mat).unwrap();
                         stderrln!("{} modularity: {}", kind, modularity)?;
-                        for (i, (h, p)) in modules.into_iter().enumerate() {
-                            for (host, parasite) in h.iter().zip(p.iter()) {
-                                stderrln!("{}\t{}\t{}", i, host, parasite)?;
+                        for (module, s) in modules {
+                            for (host, parasite) in s.iter() {
+                                stderrln!("{}\t{}\t{}", module, host, parasite)?;
                             }
                         }
                     } else if dirtlpawbplus {
                         // probably let user input reps in future.
                         let LpaWbPlus { modularity, .. } = int_mat.dirt_lpa_wb_plus(2, 2)?;
                         stdoutln!("DIRTLPAwb+\n{}", modularity)?;
-                    } else if modules {
-                        if dirtlpawbplus {
-                            let dlpa = int_mat.dirt_lpa_wb_plus(2, 2)?;
-                            let modules = dlpa.modules(&mut int_mat);
-
-                            // print the modules
-                            for (i, (hosts, parasites)) in modules.into_iter().enumerate() {
-                                // print the module
-                                for (host, parasite) in hosts.iter().zip(parasites.iter()) {
-                                    stdoutln!("{}\t{}\t{}", i, host, parasite)?;
-                                }
-                            }
-                        } else {
-                            let lpa = int_mat.clone().lpa_wb_plus(None)?;
-                            let modules = lpa.modules(&mut int_mat);
-                            // print the modules
-                            for (i, (hosts, parasites)) in modules.into_iter().enumerate() {
-                                // print the module
-                                for (host, parasite) in hosts.iter().zip(parasites.iter()) {
-                                    stdoutln!("{}\t{}\t{}", i, host, parasite)?;
-                                }
-                            }
-                        }
                     } else {
                         let LpaWbPlus { modularity, .. } = int_mat.lpa_wb_plus(None)?;
                         stdoutln!("LPAwb+\n{}", modularity)?;
