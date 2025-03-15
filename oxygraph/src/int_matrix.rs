@@ -4,8 +4,6 @@
 
 use crate::bipartite::BipartiteGraph;
 use crate::modularity;
-use crate::modularity::DirtLpaWbError;
-use crate::modularity::LpaWbPlusError;
 use crate::modularity::PlotData;
 use crate::sort::*;
 use crate::LpaWbPlus;
@@ -136,7 +134,9 @@ impl InteractionMatrix {
             for (j, (n2, _)) in hosts.iter().enumerate() {
                 let is_edge = graph.0.contains_edge(*n1, *n2);
                 if is_edge {
-                    int_max.inner[[i, j]] = 1.0;
+                    let e = graph.0.find_edge(*n1, *n2).unwrap();
+                    let weight = graph.0.edge_weight(e).unwrap_or(&1.0);
+                    int_max.inner[[i, j]] = *weight;
                 } else {
                     int_max.inner[[i, j]] = 0.0;
                 }
@@ -179,13 +179,13 @@ impl InteractionMatrix {
             let row_size = rows.iter().filter(|e| **e == modules[module]).count();
             let prev_row_size = rows
                 .iter()
-                .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                .filter(|e| **e == *modules.get(module - 1).unwrap_or(&(module as u32)))
                 .count();
             // and the same for the columns
             let col_size = cols.iter().filter(|e| **e == modules[module]).count();
             let prev_col_size = cols
                 .iter()
-                .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                .filter(|e| **e == *modules.get(module - 1).unwrap_or(&(module as u32)))
                 .count();
 
             // as a by-product of the unwrap_or() on the .get() function above,
@@ -285,13 +285,13 @@ impl InteractionMatrix {
                 let row_size = rows.iter().filter(|e| **e == modules[module]).count();
                 let prev_row_size = rows
                     .iter()
-                    .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                    .filter(|e| **e == *modules.get(module - 1).unwrap_or(&(module as u32)))
                     .count();
                 // and the same for the columns
                 let col_size = cols.iter().filter(|e| **e == modules[module]).count();
                 let prev_col_size = cols
                     .iter()
-                    .filter(|e| **e == *modules.get(module - 1).unwrap_or(&module))
+                    .filter(|e| **e == *modules.get(module - 1).unwrap_or(&(module as u32)))
                     .count();
 
                 // as a by-product of the unwrap_or() on the .get() function above,
@@ -433,15 +433,12 @@ impl InteractionMatrix {
         mean
     }
 
-    pub fn lpa_wb_plus(
-        self,
-        init_module_guess: Option<usize>,
-    ) -> Result<LpaWbPlus, LpaWbPlusError> {
-        modularity::lpa_wb_plus(self, init_module_guess)
+    pub fn lpa_wb_plus(self, init_module_guess: Option<u32>) -> LpaWbPlus {
+        modularity::lpa_wb_plus(&self.inner, init_module_guess)
     }
 
-    pub fn dirt_lpa_wb_plus(&self, mini: usize, reps: usize) -> Result<LpaWbPlus, DirtLpaWbError> {
-        modularity::dirt_lpa_wb_plus(self, mini, reps)
+    pub fn dirt_lpa_wb_plus(&self, mini: u32, reps: u32) -> LpaWbPlus {
+        modularity::dirt_lpa_wb_plus(&self.inner, mini, reps)
     }
 
     // Make sure the smallest matrix dimension represent the red labels by making

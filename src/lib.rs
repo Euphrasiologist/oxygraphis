@@ -347,10 +347,10 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         let kind: &str;
                         let mut modularity_obj = if dirtlpawbplus {
                             kind = "DIRTLPAwb+";
-                            int_mat.clone().dirt_lpa_wb_plus(2, 2)?
+                            int_mat.clone().dirt_lpa_wb_plus(2, 2)
                         } else {
                             kind = "LPAwb+";
-                            int_mat.clone().lpa_wb_plus(None)?
+                            int_mat.clone().lpa_wb_plus(None)
                         };
                         let modularity = modularity_obj.modularity;
                         let modules = modularity_obj.plot(int_mat).unwrap();
@@ -362,10 +362,10 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         }
                     } else if dirtlpawbplus {
                         // probably let user input reps in future.
-                        let LpaWbPlus { modularity, .. } = int_mat.dirt_lpa_wb_plus(2, 2)?;
+                        let LpaWbPlus { modularity, .. } = int_mat.dirt_lpa_wb_plus(2, 2);
                         stdoutln!("DIRTLPAwb+\n{}", modularity)?;
                     } else {
-                        let LpaWbPlus { modularity, .. } = int_mat.lpa_wb_plus(None)?;
+                        let LpaWbPlus { modularity, .. } = int_mat.lpa_wb_plus(None);
                         stdoutln!("LPAwb+\n{}", modularity)?;
                     }
                 }
@@ -419,13 +419,13 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         }
                         "lpawbplus" => {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                            let LpaWbPlus { modularity, .. } = im_mat.lpa_wb_plus(None)?;
+                            let LpaWbPlus { modularity, .. } = im_mat.lpa_wb_plus(None);
                             stdoutln!("{}", modularity)?;
                             Ok::<(), Error>(())
                         }
                         "dirtlpawbplus" => {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                            let LpaWbPlus { modularity, .. } = im_mat.dirt_lpa_wb_plus(2, 2)?;
+                            let LpaWbPlus { modularity, .. } = im_mat.dirt_lpa_wb_plus(2, 2);
                             stdoutln!("{}", modularity)?;
                             Ok::<(), Error>(())
                         }

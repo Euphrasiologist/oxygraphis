@@ -13,13 +13,14 @@
 Currently you will need to clone this repository and build from source. Never fear, just download the rust toolchain. Then:
 
 ```bash
-# install from crates.io (oxygraphis 0.1.62)
+# install from crates.io
 cargo install oxygraphis
 # or from this repo
 git clone https://github.com/Euphrasiologist/oxygraphis
 cd oxygraphis
 # install to path.
 cargo install --path=.
+# or go to the releases, for all major platforms.
 ```
 
 ### Interface
@@ -76,7 +77,7 @@ Sp2    Sp3    1.0
 Sp1    Sp3    1.0
 ```
 
-And I guess should be bipartite in structure (i.e. edges only from stratum 1 -> stratum 2). A warning is issued if it isn't, but does not halt the program.
+It should be bipartite in structure (i.e. edges only from stratum 1 -> stratum 2). The graph must be bipartite to continue the program. Weights are mandatory but can be any floating point value.
 
 #### Derived graphs
 
@@ -123,8 +124,7 @@ Usage: oxygraphis bipartite <INPUT_DSV> modularity [OPTIONS]
 Options:
   -l, --lpawbplus      Compute the modularity of a bipartite network using LPAwb+ algorithm.
   -d, --dirtlpawbplus  Compute the modularity of a bipartite network using DIRTLPAwb+ algorithm.
-  -m, --modules        Compute the modules of a bipartite graph.
-  -p, --plotmod        Plot the interaction matrix of a bipartite network, sorted to maximise modularity.
+  -p, --plotmod        Plot the interaction matrix of a bipartite network, sorted to maximise modularity. Modules printed to stderr.
   -h, --help           Print help
 ```
 
