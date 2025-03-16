@@ -136,7 +136,14 @@ impl InteractionMatrix {
                 if is_edge {
                     let e = graph.0.find_edge(*n1, *n2).unwrap();
                     let weight = graph.0.edge_weight(e).unwrap_or(&1.0);
-                    int_max.inner[[i, j]] = *weight;
+                    // if the edge weight is zero, we need to force it to be 1.0
+                    // so it shows up in the interaction matrix
+                    if weight == &0.0 {
+                        int_max.inner[[i, j]] = 1.0;
+                    } else {
+                        // otherwise we're okay
+                        int_max.inner[[i, j]] = *weight;
+                    }
                 } else {
                     int_max.inner[[i, j]] = 0.0;
                 }
