@@ -261,7 +261,7 @@ fn local_maximisation(
                 .filter(|(i, _)| change_blue_label_test[*i] == Some(max_val))
                 .map(|(_, &val)| val)
                 .collect();
-            *blue_label = Some(*best_labels.choose(&mut rand::thread_rng()).unwrap());
+            *blue_label = Some(*best_labels.choose(&mut rand::rng()).unwrap());
 
             // print blue labels during iteration, getting around immutable borrow
 
@@ -320,7 +320,7 @@ fn local_maximisation(
                 .filter(|(i, _)| change_red_label_test[*i] == Some(max_val))
                 .map(|(_, &val)| val)
                 .collect();
-            *red_label = Some(*best_labels.choose(&mut rand::thread_rng()).unwrap());
+            *red_label = Some(*best_labels.choose(&mut rand::rng()).unwrap());
 
             if let Some(red_label_val) = red_label {
                 if *red_label_val as usize >= total_red_degrees.len() {
@@ -565,10 +565,10 @@ pub fn lpa_wb_plus(input_matrix: &Array2<f64>, initial_module_guess: Option<u32>
         (0..matrix.nrows()).map(|x| Some(x as u32)).collect()
     } else {
         // Sample randomly from 1 to (initial_module_guess + 1)
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let max_label = initial_module_guess.unwrap() + 1;
         (0..matrix.nrows())
-            .map(|_| Some(rng.gen_range(1..=max_label)))
+            .map(|_| Some(rng.random_range(1..=max_label)))
             .collect()
     };
 

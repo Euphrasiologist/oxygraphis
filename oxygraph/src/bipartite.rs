@@ -183,8 +183,8 @@ impl BipartiteGraph {
 
         while edge_count < edge_no {
             // guarantee these slices are non-empty pls.
-            let p = *p_node_indices.choose(&mut rand::thread_rng()).unwrap();
-            let h = *h_node_indices.choose(&mut rand::thread_rng()).unwrap();
+            let p = *p_node_indices.choose(&mut rand::rng()).unwrap();
+            let h = *h_node_indices.choose(&mut rand::rng()).unwrap();
 
             // check if this edge already exists.
             if graph.contains_edge(p, h) {
