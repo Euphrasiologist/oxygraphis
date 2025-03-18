@@ -12,7 +12,6 @@ use calm_io::*;
 use itertools::Itertools;
 use ndarray::{Array2, ArrayBase, Axis, Dim, OwnedRepr};
 use std::collections::BTreeMap;
-use std::collections::HashSet;
 use std::fmt;
 use thiserror::Error;
 
@@ -27,6 +26,15 @@ pub enum BarbersMatrixError {
 /// which can support weighted matrices in the future.
 pub type Matrix = Array2<f64>;
 
+/// Struct to hold results matching vegan's nestednodf output
+#[derive(Debug, Clone)]
+pub struct NestedNODFResult {
+    pub comm: Matrix,
+    pub fill: f64,
+    pub n_rows: f64,
+    pub n_cols: f64,
+    pub nodf: f64,
+}
 /// A matrix wrapper of ndarray plus some labels
 /// for ease.
 #[derive(Debug, Clone)]
@@ -369,46 +377,61 @@ impl InteractionMatrix {
         }
     }
 
-    /// Sorts the matrix rows and columns by decreasing fill (number of 1s)
-    pub fn sort_by_decreasing_fill(&mut self) {
-        // Sort rows by decreasing fill
-        let mut row_indices: Vec<_> = self
-            .inner
+    /// Sorts rows and columns by decreasing fill (presence/abundance)
+    pub fn sort_by_decreasing_fill(&mut self, weighted: bool) {
+        let bin_comm = self.inner.mapv(|x| if x > 0.0 { 1.0 } else { 0.0 });
+        let rfill: Vec<usize> = bin_comm
             .axis_iter(Axis(0))
-            .enumerate()
-            .map(|(idx, row)| (idx, row.iter().filter(|&&v| v == 1.0).count()))
+            .map(|r| r.sum() as usize)
             .collect();
-        row_indices.sort_by(|a, b| b.1.cmp(&a.1));
+        let cfill: Vec<usize> = bin_comm
+            .axis_iter(Axis(1))
+            .map(|c| c.sum() as usize)
+            .collect();
+
+        // Row sorting: fill, then weighted abundance if requested
+        let mut row_indices: Vec<_> = if weighted {
+            let rgrad: Vec<f64> = self.inner.axis_iter(Axis(0)).map(|r| r.sum()).collect();
+            (0..self.inner.nrows())
+                .map(|i| (i, rfill[i], rgrad[i]))
+                .collect()
+        } else {
+            (0..self.inner.nrows())
+                .map(|i| (i, rfill[i], 0.0))
+                .collect()
+        };
+        row_indices.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.partial_cmp(&a.2).unwrap()));
 
         let sorted_rows: Vec<_> = row_indices
             .iter()
-            .map(|(idx, _)| self.inner.row(*idx).to_owned())
+            .map(|(i, _, _)| self.inner.row(*i).to_owned())
             .collect();
         self.inner = Array2::from_shape_vec(
             (sorted_rows.len(), self.inner.ncols()),
-            sorted_rows
-                .iter()
-                .flat_map(|row| row.iter().cloned())
-                .collect(),
+            sorted_rows.iter().flat_map(|r| r.iter().cloned()).collect(),
         )
         .unwrap();
         self.rownames = row_indices
             .iter()
-            .map(|(idx, _)| self.rownames[*idx].clone())
+            .map(|(i, _, _)| self.rownames[*i].clone())
             .collect();
 
-        // Sort columns by decreasing fill
-        let mut col_indices: Vec<_> = self
-            .inner
-            .axis_iter(Axis(1))
-            .enumerate()
-            .map(|(idx, col)| (idx, col.iter().filter(|&&v| v == 1.0).count()))
-            .collect();
-        col_indices.sort_by(|a, b| b.1.cmp(&a.1));
+        // Column sorting: fill, then weighted abundance if requested
+        let mut col_indices: Vec<_> = if weighted {
+            let cgrad: Vec<f64> = self.inner.axis_iter(Axis(1)).map(|c| c.sum()).collect();
+            (0..self.inner.ncols())
+                .map(|i| (i, cfill[i], cgrad[i]))
+                .collect()
+        } else {
+            (0..self.inner.ncols())
+                .map(|i| (i, cfill[i], 0.0))
+                .collect()
+        };
+        col_indices.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.partial_cmp(&a.2).unwrap()));
 
         let sorted_cols: Vec<_> = col_indices
             .iter()
-            .map(|(idx, _)| self.inner.column(*idx).to_owned())
+            .map(|(i, _, _)| self.inner.column(*i).to_owned())
             .collect();
         self.inner = Array2::from_shape_vec(
             (self.inner.nrows(), sorted_cols.len()),
@@ -419,73 +442,162 @@ impl InteractionMatrix {
         .unwrap();
         self.colnames = col_indices
             .iter()
-            .map(|(idx, _)| self.colnames[*idx].clone())
+            .map(|(i, _, _)| self.colnames[*i].clone())
             .collect();
     }
 
-    /// Computes the NODF score for the interaction matrix
-    pub fn nodf(&mut self, sort_before: bool) -> f64 {
-        if sort_before {
-            self.sort_by_decreasing_fill();
+    /// Computes NODF following vegan::nestednodf, supporting weighted and binary options
+    pub fn nodf(&mut self, order: bool, weighted: bool, wbinary: bool) -> NestedNODFResult {
+        let nr = self.inner.nrows();
+        let nc = self.inner.ncols();
+
+        // return early here to avoid error
+        if nr < 2 && nc < 2 {
+            return NestedNODFResult {
+                comm: self.inner.clone(),
+                fill: 0.0,
+                n_rows: 0.0,
+                n_cols: 0.0,
+                nodf: 0.0,
+            };
         }
 
-        let row_nodf = self.calculate_nodf_for_axis(Axis(0));
-        let col_nodf = self.calculate_nodf_for_axis(Axis(1));
+        if order {
+            self.sort_by_decreasing_fill(weighted);
+        }
 
-        // Take the mean of the row and column NODF scores
-        (row_nodf + col_nodf) / 2.0
-    }
+        let bin_comm = self.inner.mapv(|x| if x > 0.0 { 1.0 } else { 0.0 });
+        let rfill: Vec<usize> = bin_comm
+            .axis_iter(Axis(0))
+            .map(|r| r.sum() as usize)
+            .collect();
+        let cfill: Vec<usize> = bin_comm
+            .axis_iter(Axis(1))
+            .map(|c| c.sum() as usize)
+            .collect();
 
-    /// Computes the NODF for rows (Axis(0)) or columns (Axis(1))
-    fn calculate_nodf_for_axis(&self, axis: Axis) -> f64 {
-        let num_elements = if axis == Axis(0) {
-            self.inner.nrows()
+        // avoid divide by zero here
+        let total_fill = if nr == 0 || nc == 0 {
+            0.0
         } else {
-            self.inner.ncols()
+            rfill.iter().sum::<usize>() as f64 / (nr * nc) as f64
         };
-        if num_elements < 2 {
-            return 0.0; // Not enough rows/columns to compare
-        }
 
-        let mut presence_sets: Vec<HashSet<usize>> = Vec::with_capacity(num_elements);
+        let mut paired_rows = Vec::new();
+        let mut valid_row_pairs = 0;
 
-        for (_, slice) in self.inner.axis_iter(axis).enumerate() {
-            let present_indices: HashSet<usize> = slice
-                .iter()
-                .enumerate()
-                .filter(|(_, &v)| v == 1.0)
-                .map(|(idx, _)| idx)
-                .collect();
-            presence_sets.push(present_indices);
-        }
-
-        let mut nodf_scores: Vec<f64> = Vec::new();
-
-        for i in 0..(num_elements - 1) {
-            let upper = &presence_sets[i];
-            for j in (i + 1)..num_elements {
-                let lower = &presence_sets[j];
-
-                if upper.len() == 0 || lower.len() == 0 {
-                    continue; // Skip empty rows/columns
-                }
-
-                // Ensure decreasing fill (upper richer than lower)
-                if lower.len() >= upper.len() {
-                    nodf_scores.push(0.0);
+        for i in 0..(nr - 1) {
+            let first_row = self.inner.row(i);
+            for j in (i + 1)..nr {
+                if rfill[i] <= rfill[j] || rfill[i] == 0 || rfill[j] == 0 {
                     continue;
                 }
 
-                let intersection_size = upper.intersection(lower).count();
-                let overlap_percentage = (100.0 * intersection_size as f64) / lower.len() as f64;
-                nodf_scores.push(overlap_percentage);
+                valid_row_pairs += 1;
+                let second_row = self.inner.row(j);
+
+                let overlap = if weighted {
+                    if !wbinary {
+                        let diff_gt_zero = first_row
+                            .iter()
+                            .zip(second_row.iter())
+                            .filter(|(&a, &b)| (a - b) > 0.0 && b > 0.0)
+                            .count();
+                        let denom = second_row.iter().filter(|&&v| v > 0.0).count();
+                        (diff_gt_zero as f64) / (denom as f64)
+                    } else {
+                        let diff_ge_zero = first_row
+                            .iter()
+                            .zip(second_row.iter())
+                            .filter(|(&a, &b)| (a - b) >= 0.0 && b > 0.0)
+                            .count();
+                        let denom = second_row.iter().filter(|&&v| v > 0.0).count();
+                        (diff_ge_zero as f64) / (denom as f64)
+                    }
+                } else {
+                    let shared = first_row
+                        .iter()
+                        .zip(second_row.iter())
+                        .filter(|(&a, &b)| a > 0.0 && b > 0.0)
+                        .count();
+                    shared as f64 / rfill[j] as f64
+                };
+
+                paired_rows.push(overlap);
             }
         }
 
-        if nodf_scores.is_empty() {
-            0.0
+        let mut paired_cols = Vec::new();
+        let mut valid_col_pairs = 0;
+
+        for i in 0..(nc - 1) {
+            let first_col = self.inner.column(i);
+            for j in (i + 1)..nc {
+                if cfill[i] <= cfill[j] || cfill[i] == 0 || cfill[j] == 0 {
+                    continue;
+                }
+
+                valid_col_pairs += 1;
+                let second_col = self.inner.column(j);
+
+                let overlap = if weighted {
+                    if !wbinary {
+                        let diff_gt_zero = first_col
+                            .iter()
+                            .zip(second_col.iter())
+                            .filter(|(&a, &b)| (a - b) > 0.0 && b > 0.0)
+                            .count();
+                        let denom = second_col.iter().filter(|&&v| v > 0.0).count();
+                        (diff_gt_zero as f64) / (denom as f64)
+                    } else {
+                        let diff_ge_zero = first_col
+                            .iter()
+                            .zip(second_col.iter())
+                            .filter(|(&a, &b)| (a - b) >= 0.0 && b > 0.0)
+                            .count();
+                        let denom = second_col.iter().filter(|&&v| v > 0.0).count();
+                        (diff_ge_zero as f64) / (denom as f64)
+                    }
+                } else {
+                    let shared = first_col
+                        .iter()
+                        .zip(second_col.iter())
+                        .filter(|(&a, &b)| a > 0.0 && b > 0.0)
+                        .count();
+                    shared as f64 / cfill[j] as f64
+                };
+
+                paired_cols.push(overlap);
+            }
+        }
+
+        let n_rows = if valid_row_pairs > 0 {
+            paired_rows.iter().sum::<f64>() * 100.0 / valid_row_pairs as f64
         } else {
-            nodf_scores.iter().sum::<f64>() / nodf_scores.len() as f64
+            0.0
+        };
+
+        let n_cols = if valid_col_pairs > 0 {
+            paired_cols.iter().sum::<f64>() * 100.0 / valid_col_pairs as f64
+        } else {
+            0.0
+        };
+
+        let total_pairs = (nr * (nr - 1)) / 2 + (nc * (nc - 1)) / 2;
+
+        let nodf = if total_pairs > 0 {
+            (paired_rows.iter().sum::<f64>() + paired_cols.iter().sum::<f64>()) * 100.0
+                / total_pairs as f64
+        } else {
+            0.0
+        };
+
+        NestedNODFResult {
+            comm: self.inner.clone(),
+            fill: total_fill,
+            n_rows,
+            n_cols,
+            nodf,
         }
     }
 
@@ -550,8 +662,10 @@ mod tests {
                 colnames: vec![],
             };
 
-            let nodf_score = matrix.nodf(true);
-            assert_eq!(nodf_score, 0.0);
+            let nodf_score = matrix.nodf(true, false, false);
+            let ns = nodf_score.nodf;
+            eprintln!("NODF: {}", ns);
+            assert_eq!(ns, 0.0);
         }
 
         #[test]
@@ -563,8 +677,9 @@ mod tests {
                 colnames: vec!["X".into(), "Y".into(), "Z".into()],
             };
 
-            let nodf_score = matrix.nodf(true);
-            assert_eq!(nodf_score, 0.0);
+            let nodf_score = matrix.nodf(true, false, false);
+            let ns = nodf_score.nodf;
+            assert_eq!(ns, 0.0);
         }
 
         #[test]
@@ -583,11 +698,12 @@ mod tests {
                 colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
             };
 
-            let nodf_score = matrix.nodf(true);
+            let nodf_score = matrix.nodf(true, false, false);
+            let ns = nodf_score.nodf;
             assert!(
-                (nodf_score - 100.0).abs() < 1e-6,
+                (ns - 100.0).abs() < 1e-6,
                 "Expected 100, got {}",
-                nodf_score
+                nodf_score.nodf
             );
         }
 
@@ -607,8 +723,9 @@ mod tests {
                 colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
             };
 
-            let nodf_score = matrix.nodf(true);
-            assert_eq!(nodf_score, 0.0);
+            let nodf_score = matrix.nodf(true, false, false);
+            let ns = nodf_score.nodf;
+            assert_eq!(ns, 0.0);
         }
 
         #[test]
@@ -627,11 +744,11 @@ mod tests {
                 colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
             };
 
-            let nodf_score = matrix.nodf(true);
+            let nodf_score = matrix.nodf(true, false, false);
             assert!(
-                nodf_score > 0.0 && nodf_score <= 100.0,
+                nodf_score.nodf > 0.0 && nodf_score.nodf <= 100.0,
                 "Expected NODF > 0, got {}",
-                nodf_score
+                nodf_score.nodf
             );
         }
 
@@ -650,14 +767,47 @@ mod tests {
                 colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
             };
 
-            let nodf_no_sort = matrix.nodf(false);
+            let nodf_no_sort = matrix.nodf(false, false, false);
             let nodf_with_sort = {
                 matrix.inner = data.clone(); // Reset matrix
-                matrix.nodf(true)
+                matrix.nodf(true, false, false)
             };
 
             // NODF with sort should be >= NODF without sort
-            assert!(nodf_with_sort >= nodf_no_sort);
+            assert!(nodf_with_sort.nodf >= nodf_no_sort.nodf);
+        }
+
+        // a test from a subset of the safariland data (R bipartite package)
+        //       [,1] [,2] [,3] [,4] [,5]
+        // [1,]    1    0    1    0    0
+        // [2,]    0    1    0    0    1
+        // [3,]    0    0    0    0    0
+        // [4,]    0    1    0    0    1
+        // [5,]    0    0    1    0    1
+
+        #[test]
+        fn test_nodf_safariland() {
+            let data = array![
+                [1.0, 0.0, 1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0, 1.0]
+            ];
+
+            let mut matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec!["1".into(), "2".into(), "3".into(), "4".into(), "5".into()],
+                colnames: vec!["1".into(), "2".into(), "3".into(), "4".into(), "5".into()],
+            };
+
+            let nodf_score = matrix.nodf(true, false, false);
+
+            assert!(
+                nodf_score.nodf == 12.5,
+                "Expected NODF 12.5, got {}",
+                nodf_score.nodf
+            );
         }
     }
 }

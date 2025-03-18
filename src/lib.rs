@@ -261,21 +261,24 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     } else if nodf {
                         // sort and make nodf.
                         im_mat.sort();
-                        let nodf = im_mat.nodf();
-                        stdoutln!("NODF\n{}", nodf)?;
+                        // unweighted
+                        let nodf = im_mat.nodf(true, false, false);
+                        stdoutln!("NODF\n{}", nodf.nodf)?;
                     } else if print {
                         stdoutln!("{}", im_mat)?;
                     } else {
                         // default subcommand output
                         let InteractionMatrixStats {
+                            weighted,
                             no_rows,
                             no_cols,
                             no_poss_ints,
                             perc_ints,
                         } = im_mat.stats();
-                        stdoutln!("#_rows\t#_cols\t#_poss_ints\tperc_ints")?;
+                        stdoutln!("weighted\t#_rows\t#_cols\t#_poss_ints\tperc_ints")?;
                         stdoutln!(
-                            "{}\t{}\t{}\t{}",
+                            "{}\t{}\t{}\t{}\t{}",
+                            weighted,
                             no_rows,
                             no_cols,
                             no_poss_ints,
@@ -411,9 +414,10 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         "nodf" => {
                             let mut im_mat = InteractionMatrix::from_bipartite(rand_graph);
                             im_mat.sort();
-                            let nodf = im_mat.nodf();
-                            if !nodf.is_nan() {
-                                stdoutln!("{}", nodf)?;
+                            // unweighted
+                            let nodf = im_mat.nodf(true, false, false);
+                            if !nodf.nodf.is_nan() {
+                                stdoutln!("{}", nodf.nodf)?;
                             }
                             Ok::<(), Error>(())
                         }
