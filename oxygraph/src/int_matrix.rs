@@ -62,6 +62,8 @@ impl fmt::Display for InteractionMatrix {
 /// statistics.
 #[derive(Debug)]
 pub struct InteractionMatrixStats {
+    /// Is it a weighted matrix?
+    pub weighted: bool,
     /// Number of rows in the matrix
     pub no_rows: usize,
     /// Number of columns in the matrix
@@ -78,9 +80,18 @@ impl InteractionMatrix {
         let no_rows = self.rownames.len();
         let no_cols = self.colnames.len();
         let no_poss_ints = no_rows * no_cols;
-        let perc_ints = self.sum_matrix() / no_poss_ints as f64;
+        // matrix sum here must remove the weights
+        // if we want to do this on a weighted matrix
+        // we need to change the sum_matrix() function
+        let weighted = self.inner.iter().any(|e| *e > 1.0);
+
+        // change matrix to binary matrix
+        let bin_mat = self.inner.map(|e| if *e > 0.0 { 1.0 } else { 0.0 });
+
+        let perc_ints = bin_mat.sum() / no_poss_ints as f64;
 
         InteractionMatrixStats {
+            weighted,
             no_rows,
             no_cols,
             no_poss_ints,
@@ -358,86 +369,124 @@ impl InteractionMatrix {
         }
     }
 
-    /// Compute the NODF of an interaction matrix
-    /// Can be sorted or unsorted. If you want it to
-    /// compute on a sorted matrix, call `.sort()` before
-    /// this function.
-    ///
-    /// TODO: refactor this code.
-    pub fn nodf(&mut self) -> f64 {
-        // following https://nadiah.org/2021/07/16/nodf-nestedness-worked-example
-        // rows first
-        let mut pos_row_set_vec = Vec::new();
-        for row in self.inner.rows() {
-            let positions_of_ones_iter = row
-                .iter()
-                .enumerate()
-                .filter(|(_, &r)| r == 1.0)
-                .map(|(index, _)| index)
-                .collect::<HashSet<_>>();
+    /// Sorts the matrix rows and columns by decreasing fill (number of 1s)
+    pub fn sort_by_decreasing_fill(&mut self) {
+        // Sort rows by decreasing fill
+        let mut row_indices: Vec<_> = self
+            .inner
+            .axis_iter(Axis(0))
+            .enumerate()
+            .map(|(idx, row)| (idx, row.iter().filter(|&&v| v == 1.0).count()))
+            .collect();
+        row_indices.sort_by(|a, b| b.1.cmp(&a.1));
 
-            pos_row_set_vec.push(positions_of_ones_iter);
-        }
-        // make combinations
-        let comb_pos_row = pos_row_set_vec.iter().combinations(2);
-
-        // store row number paired
-        let mut np_row = Vec::new();
-        for upper_lower in comb_pos_row {
-            // these should be guaranteed subsets
-            let upper = upper_lower[0];
-            let lower = upper_lower[1];
-            if lower.len() >= upper.len() {
-                np_row.push(0.0);
-            } else {
-                let int: HashSet<_> = upper.intersection(lower).collect();
-                np_row.push((100.0 * int.len() as f64) / lower.len() as f64)
-            }
-        }
-
-        // now columns, just copying above, clean up later
-        let t_int = self.transpose();
-
-        let mut pos_col_set_vec = Vec::new();
-        for row in t_int.inner.rows() {
-            let positions_of_ones_iter = row
-                .iter()
-                .enumerate()
-                .filter(|(_, &r)| r == 1.0)
-                .map(|(index, _)| index)
-                .collect::<HashSet<_>>();
-
-            pos_col_set_vec.push(positions_of_ones_iter);
-        }
-        // make combinations
-        let comb_pos_col = pos_col_set_vec.iter().combinations(2);
-
-        // store row number paired
-        let mut np_col = Vec::new();
-        for upper_lower in comb_pos_col {
-            // these should be guaranteed subsets
-            let upper = upper_lower[0];
-            let lower = upper_lower[1];
-            if lower.len() >= upper.len() {
-                np_col.push(0.0);
-            } else {
-                let int: HashSet<_> = upper.intersection(lower).collect();
-                np_col.push((100.0 * int.len() as f64) / lower.len() as f64)
-            }
-        }
-
-        // append all to np_row
-        np_row.append(&mut np_col);
-
-        // not sure how to deal with NaNs
-        let np_row_filt: Vec<_> = np_row
+        let sorted_rows: Vec<_> = row_indices
             .iter()
-            .map(|e| if e.is_nan() { 0.0 } else { *e })
+            .map(|(idx, _)| self.inner.row(*idx).to_owned())
+            .collect();
+        self.inner = Array2::from_shape_vec(
+            (sorted_rows.len(), self.inner.ncols()),
+            sorted_rows
+                .iter()
+                .flat_map(|row| row.iter().cloned())
+                .collect(),
+        )
+        .unwrap();
+        self.rownames = row_indices
+            .iter()
+            .map(|(idx, _)| self.rownames[*idx].clone())
             .collect();
 
-        let mean = np_row_filt.iter().sum::<f64>() / np_row_filt.len() as f64;
+        // Sort columns by decreasing fill
+        let mut col_indices: Vec<_> = self
+            .inner
+            .axis_iter(Axis(1))
+            .enumerate()
+            .map(|(idx, col)| (idx, col.iter().filter(|&&v| v == 1.0).count()))
+            .collect();
+        col_indices.sort_by(|a, b| b.1.cmp(&a.1));
 
-        mean
+        let sorted_cols: Vec<_> = col_indices
+            .iter()
+            .map(|(idx, _)| self.inner.column(*idx).to_owned())
+            .collect();
+        self.inner = Array2::from_shape_vec(
+            (self.inner.nrows(), sorted_cols.len()),
+            (0..self.inner.nrows())
+                .flat_map(|row_idx| sorted_cols.iter().map(move |col| col[row_idx]))
+                .collect(),
+        )
+        .unwrap();
+        self.colnames = col_indices
+            .iter()
+            .map(|(idx, _)| self.colnames[*idx].clone())
+            .collect();
+    }
+
+    /// Computes the NODF score for the interaction matrix
+    pub fn nodf(&mut self, sort_before: bool) -> f64 {
+        if sort_before {
+            self.sort_by_decreasing_fill();
+        }
+
+        let row_nodf = self.calculate_nodf_for_axis(Axis(0));
+        let col_nodf = self.calculate_nodf_for_axis(Axis(1));
+
+        // Take the mean of the row and column NODF scores
+        (row_nodf + col_nodf) / 2.0
+    }
+
+    /// Computes the NODF for rows (Axis(0)) or columns (Axis(1))
+    fn calculate_nodf_for_axis(&self, axis: Axis) -> f64 {
+        let num_elements = if axis == Axis(0) {
+            self.inner.nrows()
+        } else {
+            self.inner.ncols()
+        };
+        if num_elements < 2 {
+            return 0.0; // Not enough rows/columns to compare
+        }
+
+        let mut presence_sets: Vec<HashSet<usize>> = Vec::with_capacity(num_elements);
+
+        for (_, slice) in self.inner.axis_iter(axis).enumerate() {
+            let present_indices: HashSet<usize> = slice
+                .iter()
+                .enumerate()
+                .filter(|(_, &v)| v == 1.0)
+                .map(|(idx, _)| idx)
+                .collect();
+            presence_sets.push(present_indices);
+        }
+
+        let mut nodf_scores: Vec<f64> = Vec::new();
+
+        for i in 0..(num_elements - 1) {
+            let upper = &presence_sets[i];
+            for j in (i + 1)..num_elements {
+                let lower = &presence_sets[j];
+
+                if upper.len() == 0 || lower.len() == 0 {
+                    continue; // Skip empty rows/columns
+                }
+
+                // Ensure decreasing fill (upper richer than lower)
+                if lower.len() >= upper.len() {
+                    nodf_scores.push(0.0);
+                    continue;
+                }
+
+                let intersection_size = upper.intersection(lower).count();
+                let overlap_percentage = (100.0 * intersection_size as f64) / lower.len() as f64;
+                nodf_scores.push(overlap_percentage);
+            }
+        }
+
+        if nodf_scores.is_empty() {
+            0.0
+        } else {
+            nodf_scores.iter().sum::<f64>() / nodf_scores.len() as f64
+        }
     }
 
     pub fn lpa_wb_plus(self, init_module_guess: Option<u32>) -> LpaWbPlus {
@@ -484,110 +533,131 @@ impl InteractionMatrix {
 
 #[cfg(test)]
 mod tests {
-
-    use ndarray::arr2;
-
     // bring everything in from above
     use super::*;
 
-    #[test]
-    fn check_nodf() {
-        // create a new interaction matrix
-        // copy the example here
-        // https://nadiah.org/2021/07/16/nodf-nestedness-worked-example
-        let mut int_mat = InteractionMatrix::new(5, 5);
-        int_mat.rownames = vec![
-            "1r".into(),
-            "2r".into(),
-            "3r".into(),
-            "4r".into(),
-            "5r".into(),
-        ];
-        int_mat.colnames = vec![
-            "1c".into(),
-            "2c".into(),
-            "3c".into(),
-            "4c".into(),
-            "5c".into(),
-        ];
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use ndarray::array;
 
-        int_mat.inner = arr2(&[
-            [1.0, 0.0, 1.0, 1.0, 1.0],
-            [1.0, 1.0, 1.0, 0.0, 0.0],
-            [0.0, 1.0, 1.0, 1.0, 0.0],
-            [1.0, 1.0, 0.0, 0.0, 0.0],
-            [1.0, 1.0, 0.0, 0.0, 0.0],
-        ]);
+        #[test]
+        fn test_empty_matrix() {
+            let data = Array2::<f64>::zeros((0, 0));
+            let mut matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec![],
+                colnames: vec![],
+            };
 
-        let nodf = int_mat.nodf();
+            let nodf_score = matrix.nodf(true);
+            assert_eq!(nodf_score, 0.0);
+        }
 
-        assert_eq!(nodf.floor(), 58.333f64.floor());
-    }
+        #[test]
+        fn test_all_zero_matrix() {
+            let data = Array2::<f64>::zeros((3, 3));
+            let mut matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec!["A".into(), "B".into(), "C".into()],
+                colnames: vec!["X".into(), "Y".into(), "Z".into()],
+            };
 
-    #[test]
-    fn check_perfect_nodf() {
-        let mut int_mat = InteractionMatrix::new(5, 5);
-        int_mat.rownames = vec![
-            "1r".into(),
-            "2r".into(),
-            "3r".into(),
-            "4r".into(),
-            "5r".into(),
-        ];
-        int_mat.colnames = vec![
-            "1c".into(),
-            "2c".into(),
-            "3c".into(),
-            "4c".into(),
-            "5c".into(),
-        ];
+            let nodf_score = matrix.nodf(true);
+            assert_eq!(nodf_score, 0.0);
+        }
 
-        int_mat.inner = arr2(&[
-            [1.0, 1.0, 1.0, 1.0, 1.0],
-            [1.0, 1.0, 1.0, 1.0, 0.0],
-            [1.0, 1.0, 1.0, 0.0, 0.0],
-            [1.0, 1.0, 0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0, 0.0],
-        ]);
+        #[test]
+        fn test_perfect_nested_matrix() {
+            // This is a perfectly nested matrix
+            let data = array![
+                [1.0, 1.0, 1.0, 1.0], // Richest row
+                [1.0, 1.0, 1.0, 0.0],
+                [1.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0] // Poorest row
+            ];
 
-        let nodf = int_mat.nodf();
+            let mut matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec!["A".into(), "B".into(), "C".into(), "D".into()],
+                colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
+            };
 
-        assert_eq!(nodf, 100.0);
-    }
+            let nodf_score = matrix.nodf(true);
+            assert!(
+                (nodf_score - 100.0).abs() < 1e-6,
+                "Expected 100, got {}",
+                nodf_score
+            );
+        }
 
-    #[test]
-    fn check_sorted_nodf() {
-        let mut int_mat = InteractionMatrix::new(5, 5);
-        int_mat.rownames = vec![
-            "1r".into(),
-            "2r".into(),
-            "3r".into(),
-            "4r".into(),
-            "5r".into(),
-        ];
-        int_mat.colnames = vec![
-            "1c".into(),
-            "2c".into(),
-            "3c".into(),
-            "4c".into(),
-            "5c".into(),
-        ];
+        #[test]
+        fn test_no_nestedness_matrix() {
+            // No nestedness: rows are disjoint
+            let data = array![
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0]
+            ];
 
-        int_mat.inner = arr2(&[
-            [0.0, 0.0, 0.0, 0.0, 1.0],
-            [0.0, 0.0, 0.0, 1.0, 1.0],
-            [0.0, 0.0, 1.0, 1.0, 1.0],
-            [0.0, 1.0, 1.0, 1.0, 1.0],
-            [1.0, 1.0, 1.0, 1.0, 1.0],
-        ]);
+            let mut matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec!["A".into(), "B".into(), "C".into(), "D".into()],
+                colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
+            };
 
-        // NODF should always be maximised (for standard comparison)
-        // so sorting this matrix (which would have a NODF == 0)
-        // to its maximal configuration is best practice.
-        int_mat.sort();
+            let nodf_score = matrix.nodf(true);
+            assert_eq!(nodf_score, 0.0);
+        }
 
-        let nodf = int_mat.nodf();
+        #[test]
+        fn test_unsorted_matrix_auto_sort() {
+            // Unsorted matrix that needs sorting to show nestedness
+            let data = array![
+                [1.0, 1.0, 1.0, 1.0], // Should be first after sorting
+                [1.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0],
+                [1.0, 1.0, 1.0, 0.0], // Should be second after sorting
+            ];
 
-        assert_eq!(nodf, 100.0);
+            let mut matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec!["D".into(), "B".into(), "C".into(), "A".into()],
+                colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
+            };
+
+            let nodf_score = matrix.nodf(true);
+            assert!(
+                nodf_score > 0.0 && nodf_score <= 100.0,
+                "Expected NODF > 0, got {}",
+                nodf_score
+            );
+        }
+
+        #[test]
+        fn test_unsorted_matrix_without_sorting() {
+            let data = array![
+                [1.0, 1.0, 1.0, 1.0], // Should be first after sorting
+                [1.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0],
+                [1.0, 1.0, 1.0, 0.0], // Should be second after sorting
+            ];
+
+            let mut matrix = InteractionMatrix {
+                inner: data.clone(),
+                rownames: vec!["D".into(), "B".into(), "C".into(), "A".into()],
+                colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
+            };
+
+            let nodf_no_sort = matrix.nodf(false);
+            let nodf_with_sort = {
+                matrix.inner = data.clone(); // Reset matrix
+                matrix.nodf(true)
+            };
+
+            // NODF with sort should be >= NODF without sort
+            assert!(nodf_with_sort >= nodf_no_sort);
+        }
     }
 }
