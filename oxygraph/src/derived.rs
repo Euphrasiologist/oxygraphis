@@ -1,9 +1,16 @@
-//! The derived graphs of a bipartite graph are
-//! the relationships among each of the two strata
-//! in the bipartite graph. Each node in a single
-//! stratum will share edges weighted by how many connections
-//! they share.
+//! Derived graphs represent projections of bipartite networks onto each stratum.
+//!
+//! In a bipartite graph, there are two strata (e.g., parasites and hosts). A derived graph
+//! projects the bipartite relationships onto one stratum, such that nodes are connected by
+//! how many shared partners they have in the opposing stratum.
+//!
+//! For example, two parasite species that both interact with the same host species will have
+//! an edge between them in the parasite derived graph, weighted by the number of shared hosts.
+//!
+//! This module provides `DerivedGraph` for a single stratum and `DerivedGraphs` for both strata,
+//! including statistics and simple circular graph visualizations.
 
+use crate::bipartite::SpeciesNode;
 use crate::BipartiteGraph;
 use crate::{scale_fit, MARGIN_LR};
 use calm_io::*;
@@ -15,30 +22,45 @@ use petgraph::{
 };
 use std::collections::{HashMap, HashSet};
 
-/// Species is a String
+/// Species is a `String` type alias for clarity.
 pub type Species = String;
-/// Total connection number
+
+/// Total number of connections a species has in a derived graph.
 pub type Connections = usize;
-/// Size is currently a usize.
+
+/// Number of shared connections between two species in a derived graph.
 pub type Shared = usize;
 
-/// A derived graph of either hosts or parasites.
-/// It's made of the three types above.
+/// A derived graph representing the relationships among species in a single stratum.
+///
+/// Nodes represent species within one stratum (e.g., parasites or hosts).
+/// Edges represent the number of shared connections they have to the opposing stratum.
+/// - Node weights: `(Species, Connections)`
+/// - Edge weights: `Shared`
 #[derive(Debug)]
 pub struct DerivedGraph(pub UnGraph<(Species, Connections), Shared>);
 
 impl DerivedGraph {
-    /// Compute the overlap measure between all species
-    /// in a stratum (i.e. this derived graph).
+    /// Compute an overlap measure for the derived graph.
+    ///
+    /// This function is a placeholder and will calculate overlap metrics (e.g., Jaccard similarity)
+    /// for species in the same stratum. Not yet implemented.
     pub fn overlap_measure() {
         todo!()
     }
 
-    /// The plots of [`DerivedGraph`] are going to be circular
-    /// graphs with some sugar.
+    /// Plot the derived graph as a circular layout in SVG format.
+    ///
+    /// # Arguments
+    /// * `diameter` - The diameter of the circular layout.
+    /// * `remove` - A threshold value. Edges with fewer shared partners than this value are ignored in the plot.
+    ///
+    /// # Details
+    /// Nodes are placed evenly on a circle.
+    /// Edges are drawn between nodes, scaled by the number of shared partners.
     ///
     /// Modified from a reference here:
-    /// https://observablehq.com/@euphrasiologist/hybridisation-in-the-genus-saxifraga
+    /// <https://observablehq.com/@euphrasiologist/hybridisation-in-the-genus-saxifraga>
     pub fn plot(&self, diameter: f64, remove: f64) {
         let graph = &self.0;
         // this will store the positions of the nodes in cartesian space.
@@ -131,11 +153,9 @@ impl DerivedGraph {
     }
 }
 
-/// DerivedGraph will be a wrapper over `petgraph`'s
-/// `UnGraph`.
+/// Holds two derived graphs: one for parasites and one for hosts.
 ///
-/// There are two, one for the upper stratum (parasites),
-/// and one for the lower stratum (hosts).
+/// Each derived graph represents the projected relationships within a single stratum.
 pub struct DerivedGraphs {
     /// A derived graph of the parasites.
     pub parasites: DerivedGraph,
@@ -143,7 +163,9 @@ pub struct DerivedGraphs {
     pub hosts: DerivedGraph,
 }
 
-/// Derived graph statistics.
+/// Basic statistics for a `DerivedGraphs` object.
+///
+/// Provides node and edge counts for both strata, including filtered edge counts.
 pub struct DerivedGraphStats {
     /// The number of parasite nodes in the graph.
     pub parasite_nodes: usize,
@@ -160,7 +182,9 @@ pub struct DerivedGraphStats {
 }
 
 impl DerivedGraphs {
-    /// Some basic statistics about the graphs.
+    /// Generate basic statistics on the derived graphs.
+    ///
+    /// Includes node counts, edge counts, and counts of edges with weights greater than 1.
     pub fn stats(&self) -> DerivedGraphStats {
         let parasites = &self.parasites.0;
         let hosts = &self.hosts.0;
@@ -183,6 +207,15 @@ impl DerivedGraphs {
         }
     }
 
+    /// Generate `DerivedGraphs` from a `BipartiteGraph`.
+    ///
+    /// Projects the bipartite graph into two unipartite (derived) graphs:
+    /// - One for parasites, where edges represent shared hosts.
+    /// - One for hosts, where edges represent shared parasites.
+    ///
+    /// # Assumptions
+    /// - Parasites have only outgoing edges in the bipartite graph.
+    /// - Hosts have only incoming edges in the bipartite graph.
     pub fn from_bipartite(bpgraph: BipartiteGraph) -> Self {
         // extract nodes for each stratum
         // find the set of their connections
@@ -192,7 +225,7 @@ impl DerivedGraphs {
 
         // closure so we can capture bpgraph.
         let make_derived_graph =
-            |input: Vec<(NodeIndex, &String)>, dir: Direction| -> DerivedGraph {
+            |input: Vec<(NodeIndex, &SpeciesNode)>, dir: Direction| -> DerivedGraph {
                 // make the parasite derived graph
                 let mut ungraph: DerivedGraph = DerivedGraph(UnGraph::new_undirected());
                 // store the species name + node index
@@ -206,7 +239,7 @@ impl DerivedGraphs {
                     // make the set of connecting nodes
                     let out: HashSet<NodeIndex> = bpgraph.0.neighbors_directed(node, dir).collect();
                     // add the parasite node to its own graph
-                    let node_index = ungraph.0.add_node((spp.clone(), 0));
+                    let node_index = ungraph.0.add_node((spp.to_species(), 0));
                     // add these to a map
                     node_conn_map.insert(node_index, out);
                     // and insert the species + node into map for later addition.
@@ -231,10 +264,10 @@ impl DerivedGraphs {
                             continue;
                         }
                     };
-                    *ungraph.0.node_weight_mut(*n1.0).unwrap() = (n1_spp.clone(), n1_len);
+                    *ungraph.0.node_weight_mut(*n1.0).unwrap() = (n1_spp.to_species(), n1_len);
                     // update the n2 weight
                     let n2_spp = node_index_map.get(n2.0).unwrap();
-                    *ungraph.0.node_weight_mut(*n2.0).unwrap() = (n2_spp.clone(), n2_len);
+                    *ungraph.0.node_weight_mut(*n2.0).unwrap() = (n2_spp.to_species(), n2_len);
 
                     // now add the edges in our parasite graph
                     let overlap: HashSet<_> = n1.1.intersection(n2.1).collect();
@@ -256,5 +289,124 @@ impl DerivedGraphs {
             parasites: parasite_ungraph,
             hosts: host_ungraph,
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use crate::bipartite::{Fitness, Partition};
+
+    use super::*;
+    use petgraph::graph::Graph;
+
+    /// Helper function: build a simple bipartite graph:
+    ///
+    /// Parasites: A, B  
+    /// Hosts:     X, Y  
+    /// Edges:  
+    /// - A -> X  
+    /// - A -> Y  
+    /// - B -> Y
+    ///
+    /// This will create overlaps in hosts (both A and B share host Y).
+    fn make_simple_bipartite() -> BipartiteGraph {
+        let mut graph = Graph::<SpeciesNode, Fitness>::new();
+
+        // Parasites
+        let a = graph.add_node(SpeciesNode::new("A".into(), Partition::Parasites));
+        let b = graph.add_node(SpeciesNode::new("B".into(), Partition::Parasites));
+
+        // Hosts
+        let x = graph.add_node(SpeciesNode::new("X".into(), Partition::Hosts));
+        let y = graph.add_node(SpeciesNode::new("Y".into(), Partition::Hosts));
+
+        // Edges
+        graph.add_edge(a, x, 1.0);
+        graph.add_edge(a, y, 1.0);
+        graph.add_edge(b, y, 1.0);
+
+        BipartiteGraph(graph)
+    }
+
+    #[test]
+    fn test_from_bipartite_creates_correct_derived_graphs() {
+        let bp_graph = make_simple_bipartite();
+
+        let derived_graphs = DerivedGraphs::from_bipartite(bp_graph);
+
+        // Parasite graph:
+        // A and B share host Y, so they should have an edge.
+        let parasite_graph = &derived_graphs.parasites.0;
+
+        assert_eq!(
+            parasite_graph.node_count(),
+            2,
+            "Parasite graph should have 2 nodes"
+        );
+        assert_eq!(
+            parasite_graph.edge_count(),
+            1,
+            "Parasite graph should have 1 edge"
+        );
+
+        // Edge weight should be 1 because they only share Y.
+        let edge = parasite_graph.edge_references().next().unwrap();
+        assert_eq!(*edge.weight(), 1, "Edge weight should be 1 (shared host Y)");
+
+        // Host graph:
+        // Hosts X and Y share parasite A, so they should have an edge.
+        let host_graph = &derived_graphs.hosts.0;
+
+        assert_eq!(host_graph.node_count(), 2, "Host graph should have 2 nodes");
+        assert_eq!(host_graph.edge_count(), 1, "Host graph should have 1 edge");
+
+        // Edge weight should be 1 because they only share parasite A.
+        let edge = host_graph.edge_references().next().unwrap();
+        assert_eq!(
+            *edge.weight(),
+            1,
+            "Edge weight should be 1 (shared parasite A)"
+        );
+    }
+
+    #[test]
+    fn test_derived_graphs_stats_are_correct() {
+        let bp_graph = make_simple_bipartite();
+
+        let derived_graphs = DerivedGraphs::from_bipartite(bp_graph);
+        let stats = derived_graphs.stats();
+
+        assert_eq!(stats.parasite_nodes, 2);
+        assert_eq!(stats.parasite_edges, 1);
+        assert_eq!(stats.parasite_edges_filtered, 0); // edges are 1, not >1
+
+        assert_eq!(stats.host_nodes, 2);
+        assert_eq!(stats.host_edges, 1);
+        assert_eq!(stats.host_edges_filtered, 0); // edges are 1, not >1
+    }
+
+    #[test]
+    fn test_plot_does_not_panic() {
+        let bp_graph = make_simple_bipartite();
+        let derived_graphs = DerivedGraphs::from_bipartite(bp_graph);
+
+        // Test that plotting doesn't panic
+        derived_graphs.parasites.plot(500.0, 0.0);
+        derived_graphs.hosts.plot(500.0, 0.0);
+    }
+
+    #[test]
+    fn test_empty_bipartite_graph() {
+        let empty_graph = BipartiteGraph(Graph::new());
+
+        let derived_graphs = DerivedGraphs::from_bipartite(empty_graph);
+        let stats = derived_graphs.stats();
+
+        assert_eq!(stats.parasite_nodes, 0);
+        assert_eq!(stats.parasite_edges, 0);
+        assert_eq!(stats.parasite_edges_filtered, 0);
+
+        assert_eq!(stats.host_nodes, 0);
+        assert_eq!(stats.host_edges, 0);
+        assert_eq!(stats.host_edges_filtered, 0);
     }
 }

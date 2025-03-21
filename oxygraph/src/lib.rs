@@ -36,9 +36,10 @@
 //!
 //! ```rust
 //! use petgraph::Graph;
-//! use oxygraph::bipartite::BipartiteGraph;
+//! use oxygraph::BipartiteGraph;
+//! use oxygraph::bipartite::SpeciesNode;
 //!
-//! let mut graph: Graph<String, f64> = Graph::new();
+//! let mut graph: Graph<SpeciesNode, f64> = Graph::new();
 //!
 //! // add nodes/edges etc...
 //!

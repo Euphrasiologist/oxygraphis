@@ -1,6 +1,6 @@
 //! Not written by myself, but by the great bluss.
 //!
-//! See https://github.com/rust-ndarray/ndarray/issues/195
+//! See <https://github.com/rust-ndarray/ndarray/issues/195>
 //! for discussion and details.
 
 use ndarray::prelude::*;
@@ -10,7 +10,7 @@ use thiserror::Error;
 use std::cmp::Ordering;
 use std::ptr::copy_nonoverlapping;
 
-/// See https://stackoverflow.com/questions/69764803/how-to-sort-a-vector-by-indices-in-rust
+/// See <https://stackoverflow.com/questions/69764803/how-to-sort-a-vector-by-indices-in-rust>
 ///
 /// Sort a vector by another array of indices **in place**.
 pub fn sort_by_indices<T>(data: &mut [T], mut indices: Vec<usize>) {

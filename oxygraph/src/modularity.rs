@@ -1,10 +1,29 @@
 //! Compute the modularity of an (optionally weighted) interaction matrix.
 //!
-//! Original methods from:
+//! Original methods translated from:
 //! https://github.com/sjbeckett/weighted-modularity-LPAwbPLUS
 //!
-//! It's pretty much a direct translation, as I wanted to ensure correctness
-//! over rustiness.
+//! This is a faithful translation prioritizing correctness over idiomatic Rust.
+//!
+//! # Terminology
+//! - `red_labels` = row node communities (often parasites or species).
+//! - `blue_labels` = column node communities (often hosts or sites).
+//!
+//! # Example usage
+//! ```rust
+//! use oxygraph::modularity::{lpa_wb_plus, dirt_lpa_wb_plus};
+//! use ndarray::array;
+//!
+//! let matrix = array![
+//!     [673.0, 0.0, 110.0, 0.0, 0.0],
+//!     [0.0, 154.0, 0.0, 0.0, 5.0],
+//!     [0.0, 0.0, 0.0, 0.0, 0.0],
+//!     [0.0, 67.0, 0.0, 0.0, 5.0]
+//! ];
+//!
+//! let result = lpa_wb_plus(&matrix, None);
+//! println!("Modularity: {}", result.modularity);
+//! ```
 
 use crate::{sort::*, InteractionMatrix};
 use std::collections::{BTreeMap, HashSet};
@@ -13,8 +32,22 @@ use ndarray::{Array, Array1, Array2, Axis};
 use rand::{seq::IndexedRandom, Rng};
 use rayon::prelude::*;
 
-/// A struct just to hold the data from the output of the modularity
-/// computation.
+/// Holds the result of the modularity computation (LPAwb+ algorithm).
+///
+/// # Fields
+/// - `row_labels`: Assigned module for each row node (red nodes).
+/// - `column_labels`: Assigned module for each column node (blue nodes).
+/// - `modularity`: The computed modularity score.
+///
+/// # Example
+/// ```
+/// use oxygraph::modularity::{LpaWbPlus, lpa_wb_plus};
+/// use ndarray::array;
+///
+/// let matrix = array![[1.0, 0.0], [0.0, 1.0]];
+/// let result = lpa_wb_plus(&matrix, None);
+/// println!("Modularity score: {}", result.modularity);
+/// ```
 #[derive(Debug)]
 pub struct LpaWbPlus {
     pub row_labels: Vec<Option<u32>>,
@@ -22,9 +55,25 @@ pub struct LpaWbPlus {
     pub modularity: f64,
 }
 
-/// To plot the modules on an interaction plot, these three
-/// pieces of data must be known. The rows, columns, and
-/// the vector of modules.
+/// Metadata required to plot the modules from `LpaWbPlus`.
+///
+/// # Fields
+/// - `rows`: Row membership vector.
+/// - `cols`: Column membership vector.
+/// - `modules`: Unique module identifiers.
+///
+/// # Example
+/// ```
+/// use oxygraph::modularity::PlotData;
+/// use ndarray::array;
+///
+/// let pd = PlotData {
+///     rows: array![0, 1],
+///     cols: array![0, 1],
+///     modules: vec![0, 1]
+/// };
+/// println!("{:?}", pd.modules);
+/// ```
 #[derive(Debug, Clone)]
 pub struct PlotData {
     pub rows: Array1<u32>,
@@ -33,10 +82,35 @@ pub struct PlotData {
 }
 
 impl LpaWbPlus {
-    /// Generate a plot.
+    /// Plots the module assignments on an interaction matrix.
     ///
-    /// `int_mat` is the original interaction matrix used to
-    /// generate the `LpaWbPlus` object
+    /// # Arguments
+    /// - `int_mat`: An [`InteractionMatrix`] from which this modularity was calculated.
+    ///
+    /// # Returns
+    /// Optionally returns a map of modules to lists of species pairs (parasite x host).
+    ///
+    /// # Example
+    /// ```no_run
+    /// use oxygraph::modularity::lpa_wb_plus;
+    /// use oxygraph::int_matrix::InteractionMatrix;
+    /// use ndarray::array;
+    ///
+    /// let matrix = array![
+    ///     [1.0, 0.0],
+    ///     [0.0, 1.0]
+    /// ];
+    ///
+    /// let mut lpa_result = lpa_wb_plus(&matrix, None);
+    ///
+    /// let int_mat = InteractionMatrix {
+    ///     inner: matrix.clone(),
+    ///     rownames: vec!["P1".into(), "P2".into()],
+    ///     colnames: vec!["H1".into(), "H2".into()],
+    /// };
+    ///
+    /// lpa_result.plot(int_mat);
+    /// ```
     pub fn plot(
         &mut self,
         mut int_mat: InteractionMatrix,
@@ -543,6 +617,31 @@ fn stage_two_lpa_wb_dash(
     (red_labels, blue_labels, qb_now)
 }
 
+/// Runs the LPAwb+ modularity algorithm on a bipartite (or general) matrix.
+///
+/// # Arguments
+/// - `input_matrix`: The interaction matrix (rows x columns).
+/// - `initial_module_guess`: Optional initial guess for module assignments. If `None`,
+///    each row gets its own module.
+///
+/// # Returns
+/// [`LpaWbPlus`] result containing row and column module assignments and modularity score.
+///
+/// # Example
+/// ```
+/// use oxygraph::modularity::lpa_wb_plus;
+/// use ndarray::array;
+///
+/// let matrix = array![
+///     [673.0, 0.0, 110.0, 0.0, 0.0],
+///     [0.0, 154.0, 0.0, 0.0, 5.0],
+///     [0.0, 0.0, 0.0, 0.0, 0.0],
+///     [0.0, 67.0, 0.0, 0.0, 5.0]
+/// ];
+///
+/// let result = lpa_wb_plus(&matrix, None);
+/// println!("Modularity: {}", result.modularity);
+/// ```
 pub fn lpa_wb_plus(input_matrix: &Array2<f64>, initial_module_guess: Option<u32>) -> LpaWbPlus {
     let mut matrix = input_matrix.clone();
     let mut flipped = false;
@@ -607,6 +706,30 @@ pub fn lpa_wb_plus(input_matrix: &Array2<f64>, initial_module_guess: Option<u32>
     }
 }
 
+/// Runs the LPAwb+ algorithm multiple times and returns the best modularity found.
+/// Similar to `lpa_wb_plus()` but runs multiple repetitions and can constrain the minimum modules.
+///
+/// # Arguments
+/// - `matrix`: The input interaction matrix.
+/// - `mini`: Minimum number of modules to explore.
+/// - `reps`: Number of repetitions per module number.
+///
+/// # Returns
+/// The best [`LpaWbPlus`] result found across repetitions.
+///
+/// # Example
+/// ```
+/// use oxygraph::modularity::dirt_lpa_wb_plus;
+/// use ndarray::array;
+///
+/// let matrix = array![
+///     [1.0, 0.0],
+///     [0.0, 1.0]
+/// ];
+///
+/// let result = dirt_lpa_wb_plus(&matrix, 1, 10);
+/// println!("Best modularity found: {}", result.modularity);
+/// ```
 pub fn dirt_lpa_wb_plus(matrix: &Array2<f64>, mini: u32, reps: u32) -> LpaWbPlus {
     let LpaWbPlus {
         row_labels,

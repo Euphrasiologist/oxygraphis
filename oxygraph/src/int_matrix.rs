@@ -15,35 +15,43 @@ use std::collections::BTreeMap;
 use std::fmt;
 use thiserror::Error;
 
-/// An error type for the barbers matrix.
+/// Error returned when constructing Barber's matrix fails.
+///
+/// Usually caused by a matrix shape mismatch when reshaping rows/columns.
 #[derive(Error, Debug)]
 pub enum BarbersMatrixError {
     #[error("Could not coerce Barbers matrix into a 2 x 1 matrix.")]
     Error(#[from] ndarray::ShapeError),
 }
 
-/// Now using an ndarray with floating point numbers
-/// which can support weighted matrices in the future.
+/// A 2D interaction matrix using floating-point weights.
+///
+/// Internally represented by `ndarray::Array2<f64>`.
 pub type Matrix = Array2<f64>;
 
-/// Struct to hold results matching vegan's nestednodf output
+/// Result structure for the Nested NODF calculation, modeled after the `vegan::nestednodf` output.
 #[derive(Debug, Clone)]
 pub struct NestedNODFResult {
+    /// The binary (presence/absence) or weighted community matrix used.
     pub comm: Matrix,
+    /// Proportion of the matrix filled with interactions.
     pub fill: f64,
+    /// Nestedness contribution from rows.
     pub n_rows: f64,
+    /// Nestedness contribution from columns.
     pub n_cols: f64,
+    /// Overall NODF score.
     pub nodf: f64,
 }
-/// A matrix wrapper of ndarray plus some labels
-/// for ease.
+
+/// A wrapper around the interaction matrix with labels for rows (parasites) and columns (hosts).
 #[derive(Debug, Clone)]
 pub struct InteractionMatrix {
-    /// The actual 2d ndarray matrix
+    /// The core 2D ndarray matrix (interactions or weights).
     pub inner: Matrix,
-    /// The name of the species/specimen assigned to the rows
+    /// Row names, typically parasite species.
     pub rownames: Vec<String>,
-    /// The name of the species/specimen assigned to the columns
+    /// Column names, typically host species.
     pub colnames: Vec<String>,
 }
 
@@ -66,8 +74,7 @@ impl fmt::Display for InteractionMatrix {
     }
 }
 
-/// A structure to hold the interaction matrix
-/// statistics.
+/// Summary statistics for an interaction matrix.
 #[derive(Debug)]
 pub struct InteractionMatrixStats {
     /// Is it a weighted matrix?
@@ -83,7 +90,14 @@ pub struct InteractionMatrixStats {
 }
 
 impl InteractionMatrix {
-    /// Some stats about the matrix
+    /// Compute statistics on the interaction matrix.
+    ///
+    /// - Counts the number of rows, columns, and possible interactions.
+    /// - Calculates the percentage of realized interactions.
+    /// - Determines whether the matrix is weighted.
+    ///
+    /// # Returns
+    /// `InteractionMatrixStats` summarizing the matrix.
     pub fn stats(&self) -> InteractionMatrixStats {
         let no_rows = self.rownames.len();
         let no_cols = self.colnames.len();
@@ -106,8 +120,15 @@ impl InteractionMatrix {
             perc_ints,
         }
     }
-    /// Initiate a new [`InteractionMatrix`] with a shape of `rn` rows
-    /// and `cn` columns.
+
+    /// Create a new empty `InteractionMatrix` with the given dimensions.
+    ///
+    /// # Arguments
+    /// * `rn` - Number of rows (parasites).
+    /// * `cn` - Number of columns (hosts).
+    ///
+    /// # Returns
+    /// Empty `InteractionMatrix` with pre-allocated labels.
     pub fn new(rn: usize, cn: usize) -> Self {
         // outer vec is the number of rows,
         // inner is the number of columns
@@ -119,8 +140,9 @@ impl InteractionMatrix {
         }
     }
 
-    /// Sort an interation matrix. We use reverse, so that the top left
-    /// of the matrix is the most highly populated.
+    /// Sort rows and columns of the matrix by decreasing marginal totals (interaction counts).
+    ///
+    /// Sorts both the matrix and its corresponding row/column labels.
     pub fn sort(&mut self) {
         // sort the rows and the row labels
         // generate the row sums
@@ -141,48 +163,70 @@ impl InteractionMatrix {
         sort_by_indices(&mut self.colnames, perm_cols.indices);
     }
 
-    /// Make an interaction matrix from a bipartite
-    /// graph.
+    /// Create an `InteractionMatrix` from a [`BipartiteGraph`].
+    ///
+    /// - Parasites become **rows**.
+    /// - Hosts become **columns**.
+    /// - Edges are treated as interactions with optional weights.
+    ///
+    /// # Returns
+    /// Populated `InteractionMatrix`.
+    ///
+    /// # Examples
+    /// ```
+    /// use oxygraph::bipartite::{BipartiteGraph, Partition, SpeciesNode};
+    /// use oxygraph::int_matrix::InteractionMatrix;
+    /// use petgraph::Graph;
+    ///
+    /// // Create a simple bipartite graph manually
+    /// let mut graph = Graph::new();
+    /// let p1 = graph.add_node(SpeciesNode::new("Parasite1".to_string(), Partition::Parasites));
+    /// let h1 = graph.add_node(SpeciesNode::new("Host1".to_string(), Partition::Hosts));
+    /// graph.add_edge(p1, h1, 1.0);
+    ///
+    /// let bp_graph = BipartiteGraph(graph);
+    /// let int_matrix = InteractionMatrix::from_bipartite(bp_graph);
+    ///
+    /// assert_eq!(int_matrix.rownames, vec!["Parasite1"]);
+    /// assert_eq!(int_matrix.colnames, vec!["Host1"]);
+    /// assert_eq!(int_matrix.inner.shape(), &[1, 1]);
+    /// assert_eq!(int_matrix.inner[[0, 0]], 1.0);
+    /// ```
     pub fn from_bipartite(graph: BipartiteGraph) -> Self {
         let (parasites, hosts) = graph.get_parasite_host_from_graph();
 
-        // initialise the matrix
+        // Early return if graph is empty
+        if parasites.is_empty() || hosts.is_empty() {
+            return InteractionMatrix::new(0, 0);
+        }
+
         let mut int_max = InteractionMatrix::new(parasites.len(), hosts.len());
 
         for (i, (n1, _)) in parasites.iter().enumerate() {
             for (j, (n2, _)) in hosts.iter().enumerate() {
-                let is_edge = graph.0.contains_edge(*n1, *n2);
-                if is_edge {
-                    let e = graph.0.find_edge(*n1, *n2).unwrap();
+                if let Some(e) = graph.0.find_edge(*n1, *n2) {
                     let weight = graph.0.edge_weight(e).unwrap_or(&1.0);
-                    // if the edge weight is zero, we need to force it to be 1.0
-                    // so it shows up in the interaction matrix
-                    if weight == &0.0 {
-                        int_max.inner[[i, j]] = 1.0;
-                    } else {
-                        // otherwise we're okay
-                        int_max.inner[[i, j]] = *weight;
-                    }
+                    int_max.inner[[i, j]] = if *weight == 0.0 { 1.0 } else { *weight };
                 } else {
                     int_max.inner[[i, j]] = 0.0;
                 }
             }
         }
 
-        int_max.rownames = parasites
-            .into_iter()
-            .map(|(_, s)| s.into())
-            .collect::<Vec<String>>();
+        int_max.rownames = parasites.into_iter().map(|(_, s)| s.name.clone()).collect();
 
-        int_max.colnames = hosts
-            .into_iter()
-            .map(|(_, s)| s.into())
-            .collect::<Vec<String>>();
+        int_max.colnames = hosts.into_iter().map(|(_, s)| s.name.clone()).collect();
 
         int_max
     }
 
-    /// Get the modules, conditional on some plot data
+    /// Extract modular assignments from the interaction matrix based on [`PlotData`].
+    ///
+    /// # Arguments
+    /// * `modularity_plot_data` - Row and column module assignments.
+    ///
+    /// # Returns
+    /// A mapping of module IDs to lists of `(parasite, host)` pairs.
     pub fn modules(
         &self,
         modularity_plot_data: PlotData,
@@ -242,7 +286,33 @@ impl InteractionMatrix {
         modularity_labels
     }
 
-    /// Make an SVG interaction matrix plot. Prints to STDOUT.
+    /// Generate an SVG plot of the interaction matrix, optionally highlighting modularity.
+    ///
+    /// # Arguments
+    /// * `width` - Width of the SVG canvas.
+    /// * `modularity_plot_data` - Optional module data for plotting module boundaries.
+    ///
+    /// # Returns
+    /// * `Some` modularity data mapping if modularity data was provided.
+    /// * `None` otherwise.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use oxygraph::int_matrix::InteractionMatrix;
+    /// use ndarray::array;
+    ///
+    /// let matrix = InteractionMatrix {
+    ///     inner: array![
+    ///         [1.0, 0.0, 1.0],
+    ///         [0.0, 1.0, 0.0]
+    ///     ],
+    ///     rownames: vec!["P1".into(), "P2".into()],
+    ///     colnames: vec!["H1".into(), "H2".into(), "H3".into()],
+    /// };
+    ///
+    /// // This prints SVG to STDOUT
+    /// matrix.plot(500, None);
+    /// ```
     pub fn plot(
         &self,
         width: i32,
@@ -262,7 +332,7 @@ impl InteractionMatrix {
 
         for parasite in 0..parasites {
             for host in 0..hosts {
-                let is_assoc = self.inner[[parasite, host]] == 1.0;
+                let is_assoc = self.inner[[parasite, host]] > 0.0;
                 let col = if is_assoc { "black" } else { "white" };
                 let x = (x_spacing * host as f64) + (x_spacing / 2.0) + MARGIN_LR;
                 let y = (y_spacing * parasite as f64) + (y_spacing / 2.0) + MARGIN_LR;
@@ -367,6 +437,21 @@ impl InteractionMatrix {
     }
 
     /// Transpose an interaction matrix.
+    ///
+    /// # Returns
+    /// A new `InteractionMatrix` with rows and columns swapped.
+    ///
+    /// # Example
+    /// ```
+    /// use oxygraph::int_matrix::InteractionMatrix;
+    ///
+    /// let mut matrix = InteractionMatrix::new(2, 3);
+    /// matrix.rownames = vec!["A".to_string(), "B".to_string()];
+    /// matrix.colnames = vec!["X".to_string(), "Y".to_string(), "Z".to_string()];
+    /// let transposed = matrix.transpose();
+    /// assert_eq!(transposed.rownames, vec!["X", "Y", "Z"]);
+    /// assert_eq!(transposed.colnames, vec!["A", "B"]);
+    /// ```
     pub fn transpose(&mut self) -> Self {
         let inner = self.inner.t().to_owned();
 
@@ -377,7 +462,31 @@ impl InteractionMatrix {
         }
     }
 
-    /// Sorts rows and columns by decreasing fill (presence/abundance)
+    /// Sort the matrix by decreasing fill, optionally weighted.
+    ///
+    /// # Arguments
+    /// * `weighted` - If true, sorts by weighted degree after fill.
+    ///
+    /// # Examples
+    /// ```
+    /// use oxygraph::int_matrix::InteractionMatrix;
+    /// use ndarray::array;
+    ///
+    /// let mut matrix = InteractionMatrix {
+    ///     inner: array![
+    ///         [1.0, 0.0, 1.0], // sum = 2
+    ///         [1.0, 1.0, 1.0], // sum = 3
+    ///         [0.0, 0.0, 1.0], // sum = 1
+    ///     ],
+    ///     rownames: vec!["A".into(), "B".into(), "C".into()],
+    ///     colnames: vec!["X".into(), "Y".into(), "Z".into()],
+    /// };
+    ///
+    /// matrix.sort_by_decreasing_fill(false);
+    ///
+    /// // Rownames should now be sorted by row sum (highest to lowest)
+    /// assert_eq!(matrix.rownames, vec!["B", "A", "C"]);
+    /// ```
     pub fn sort_by_decreasing_fill(&mut self, weighted: bool) {
         let bin_comm = self.inner.mapv(|x| if x > 0.0 { 1.0 } else { 0.0 });
         let rfill: Vec<usize> = bin_comm
@@ -446,7 +555,36 @@ impl InteractionMatrix {
             .collect();
     }
 
-    /// Computes NODF following vegan::nestednodf, supporting weighted and binary options
+    /// Compute the Nested NODF index for the interaction matrix.
+    ///
+    /// # Arguments
+    /// * `order` - If true, sorts rows/columns by decreasing fill before calculation.
+    /// * `weighted` - If true, weights are used in the calculation.
+    /// * `wbinary` - If true, weights are binarized before calculating nestedness.
+    ///
+    /// # Returns
+    /// A `NestedNODFResult` containing nestedness statistics.
+    ///
+    /// # Examples
+    /// ```
+    /// use oxygraph::int_matrix::InteractionMatrix;
+    /// use ndarray::array;
+    ///
+    /// let mut matrix = InteractionMatrix {
+    ///     inner: array![
+    ///         [1.0, 1.0, 1.0], // nested with all others
+    ///         [1.0, 1.0, 0.0],
+    ///         [1.0, 0.0, 0.0]
+    ///     ],
+    ///     rownames: vec!["P1".into(), "P2".into(), "P3".into()],
+    ///     colnames: vec!["H1".into(), "H2".into(), "H3".into()],
+    /// };
+    ///
+    /// let nodf = matrix.nodf(true, false, false);
+    ///
+    /// assert_eq!(nodf.nodf, 100.0);
+    /// assert_eq!(nodf.fill, 6.0 / 9.0);
+    /// ```
     pub fn nodf(&mut self, order: bool, weighted: bool, wbinary: bool) -> NestedNODFResult {
         let nr = self.inner.nrows();
         let nc = self.inner.ncols();
@@ -601,34 +739,60 @@ impl InteractionMatrix {
         }
     }
 
+    /// Run the `LPAwb+` modularity algorithm on the matrix.
+    ///
+    /// # Arguments
+    /// * `init_module_guess` - Optional initial guess for module assignments.
+    ///
+    /// # Returns
+    /// A `LpaWbPlus` result representing module assignments.
     pub fn lpa_wb_plus(self, init_module_guess: Option<u32>) -> LpaWbPlus {
         modularity::lpa_wb_plus(&self.inner, init_module_guess)
     }
 
+    /// Run the `DIRTLPAwb+` modularity algorithm on the matrix.
+    ///
+    /// # Arguments
+    /// * `mini` - Minimum module size.
+    /// * `reps` - Number of replicates to run.
+    ///
+    /// # Returns
+    /// A `LpaWbPlus` result representing module assignments.
     pub fn dirt_lpa_wb_plus(&self, mini: u32, reps: u32) -> LpaWbPlus {
         modularity::dirt_lpa_wb_plus(&self.inner, mini, reps)
     }
 
-    // Make sure the smallest matrix dimension represent the red labels by making
-    /// Sum of an interaction matrix. Should be equal to the number of
-    /// edges in an unweighted graph.
+    /// Sum of all values in the matrix.
+    ///
+    /// Equivalent to counting edges if the matrix is unweighted.
+    ///
+    /// # Returns
+    /// The sum of matrix elements as `f64`.
     pub fn sum_matrix(&self) -> f64 {
         self.inner.sum()
     }
 
-    /// The sums of each of the rows in a matrix.
+    /// Compute row sums of the interaction matrix.
+    ///
+    /// # Returns
+    /// An array of row sums.
     pub fn row_sums(&self) -> ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>> {
         self.inner.sum_axis(Axis(1))
     }
 
-    /// Calculate the sums of each of the columns in a
-    /// matrix. Probably need to make a copy of the original matrix before
-    /// calling this function.
+    /// Compute column sums of the interaction matrix.
+    ///
+    /// # Returns
+    /// An array of column sums.
     pub fn col_sums(&self) -> ArrayBase<OwnedRepr<f64>, Dim<[usize; 1]>> {
         self.inner.sum_axis(Axis(0))
     }
 
-    /// Compute the Barber's Matrix. I don't know where this name comes from.
+    /// Compute Barber's matrix (modularity-related).
+    ///
+    /// # Returns
+    /// * `Ok` with Barber's matrix (2D array).
+    /// * `Err` if the shape is incorrect for calculation.
     pub fn barbers_matrix(
         &self,
     ) -> Result<ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>, BarbersMatrixError> {
