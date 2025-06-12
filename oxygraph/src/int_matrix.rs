@@ -272,7 +272,7 @@ impl InteractionMatrix {
             let mut zipped = Vec::new();
             for parasite in 0..parasites {
                 for host in 0..hosts {
-                    let is_assoc = self.inner[[parasite, host]] == 1.0;
+                    let is_assoc = self.inner[[parasite, host]] > 0.0;
                     if module_space.contains(&(host, parasite)) && is_assoc {
                         let p = self.rownames[parasite].clone();
                         let h = self.colnames[host].clone();

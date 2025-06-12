@@ -206,18 +206,18 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     } else if bipartite_plot_2 {
                         bpgraph.plot_prop(1800, 700);
                     } else if degrees {
-                        let degs = bpgraph.degrees();
-                        stdoutln!("spp\tvalue")?;
-                        for (s, v) in degs {
-                            stdoutln!("{}\t{}", s, v)?;
+                        let degs = bpgraph.degrees(None);
+                        stdoutln!("spp\tstratum\tvalue")?;
+                        for (s, p, v) in degs {
+                            stdoutln!("{}\t{}\t{}", s, p, v)?;
                         }
                     } else if degreedistribution {
-                        let (bin_size, deg_dist) = bpgraph.degree_distribution();
+                        let (bin_size, deg_dist) = bpgraph.degree_distribution(None, false);
                         // print the distribution
                         stdoutln!("degree\tcount")?;
 
                         for (deg, count) in deg_dist {
-                            let bin_end = deg + bin_size - 1;
+                            let bin_end = deg + bin_size - 1.0;
                             stdoutln!("{}-{}\t{}", deg, bin_end, count)?;
                         }
                     } else if bivariate_distribution {
