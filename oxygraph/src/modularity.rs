@@ -114,7 +114,10 @@ impl LpaWbPlus {
     pub fn plot(
         &mut self,
         mut int_mat: InteractionMatrix,
-    ) -> Option<BTreeMap<usize, Vec<(String, String)>>> {
+    ) -> (
+        InteractionMatrix,
+        Option<BTreeMap<usize, Vec<(String, String)>>>,
+    ) {
         let array_from_row: Array1<u32> = Array::from(
             self.row_labels
                 .iter()
@@ -176,7 +179,8 @@ impl LpaWbPlus {
             modules: uniq_rows,
         };
 
-        int_mat.plot(1000, Some(plot_data.clone()))
+        let modules = int_mat.plot(1000, Some(plot_data.clone()));
+        (int_mat, modules)
     }
 }
 

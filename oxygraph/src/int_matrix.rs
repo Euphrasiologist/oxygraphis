@@ -13,6 +13,8 @@ use itertools::Itertools;
 use ndarray::{Array2, ArrayBase, Axis, Dim, OwnedRepr};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::io::Write;
+use std::path::PathBuf;
 use thiserror::Error;
 
 /// Error returned when constructing Barber's matrix fails.
@@ -90,6 +92,39 @@ pub struct InteractionMatrixStats {
 }
 
 impl InteractionMatrix {
+    /// Write an interaction matrix to a TSV file.
+    pub fn write_tsv(&self, filename: PathBuf, kind: &str) -> Result<(), std::io::Error> {
+        let mut writer = std::fs::File::create(filename)?;
+        // write the header
+        let header = format!("# {} edited interaction matrix\n", kind);
+        writer.write_all(header.as_bytes())?;
+        // write the column names first
+        let col_headers = format!("parasite\thost\tweight\n");
+        writer.write_all(col_headers.as_bytes())?;
+
+        // iterate over each of the elements and print out host and parasite and weight
+        // lengths of the rows and columns
+        let parasites = self.rownames.len();
+        let hosts = self.colnames.len();
+
+        // write the rows
+        for parasite in 0..parasites {
+            for host in 0..hosts {
+                let line = format!(
+                    "{}\t{}\t{}\n",
+                    self.rownames[parasite],
+                    self.colnames[host],
+                    self.inner[[parasite, host]]
+                );
+                if let Err(e) = writer.write_all(line.as_bytes()) {
+                    return Err(e);
+                }
+            }
+        }
+        writer.flush()?;
+        Ok(())
+    }
+
     /// Compute statistics on the interaction matrix.
     ///
     /// - Counts the number of rows, columns, and possible interactions.
@@ -205,6 +240,8 @@ impl InteractionMatrix {
         for (i, (n1, _)) in parasites.iter().enumerate() {
             for (j, (n2, _)) in hosts.iter().enumerate() {
                 if let Some(e) = graph.0.find_edge(*n1, *n2) {
+                    // FIXME: is this right?
+                    // if an edge is found, default wright is 1.0.
                     let weight = graph.0.edge_weight(e).unwrap_or(&1.0);
                     int_max.inner[[i, j]] = if *weight == 0.0 { 1.0 } else { *weight };
                 } else {

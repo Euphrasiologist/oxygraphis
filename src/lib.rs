@@ -6,7 +6,7 @@ use oxygraph::{
     InteractionMatrixStats, LpaWbPlus,
 };
 use rayon::prelude::*;
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 /// Create the CLI in clap.
 ///
@@ -111,6 +111,12 @@ pub fn cli() -> Command {
                     .arg(
                         arg!(-p --plotmod "Plot the interaction matrix of a bipartite network, sorted to maximise modularity.")
                             .action(clap::ArgAction::SetTrue)
+                    )
+                    // a directory where the lting modularity files are saved.
+                    .arg(
+                        arg!(-o --output [OUTPUT] "Output directory for the modularity files.")
+                            .value_parser(value_parser!(PathBuf))
+                            .default_value(".")
                     )
                 )
             )
@@ -342,6 +348,9 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let plot = *mod_matches
                         .get_one::<bool>("plotmod")
                         .expect("defaulted by clap.");
+                    let dir = mod_matches
+                        .get_one::<PathBuf>("output")
+                        .expect("defaulted by clap.");
 
                     // create the interaction matrix
                     let int_mat = InteractionMatrix::from_bipartite(bpgraph);
@@ -356,13 +365,30 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             int_mat.clone().lpa_wb_plus(None)
                         };
                         let modularity = modularity_obj.modularity;
-                        let modules = modularity_obj.plot(int_mat).unwrap();
-                        stderrln!("{} modularity: {}", kind, modularity)?;
-                        for (module, s) in modules {
+                        let (int_mat, modules) = modularity_obj.plot(int_mat);
+
+                        // create the file path for the interaction matrix
+                        let im_path = dir.join(format!("{}_interaction_matrix.tsv", kind));
+
+                        // write the interaction matrix to a TSV file
+                        int_mat.write_tsv(im_path, kind)?;
+
+                        // now write the modules to a TSV file
+                        let modules_path = dir.join(format!("{}_modules.tsv", kind));
+                        let mut modules_file = std::fs::File::create(modules_path)?;
+
+                        let module_header = format!("# {} modularity: {}\n", kind, modularity);
+                        modules_file.write_all(module_header.as_bytes())?;
+
+                        let module_headers = format!("module\tparasite\thost\n");
+                        modules_file.write_all(module_headers.as_bytes())?;
+                        for (module, s) in modules.unwrap() {
                             for (host, parasite) in s.iter() {
-                                stderrln!("{}\t{}\t{}", module, host, parasite)?;
+                                let line = format!("{}\t{}\t{}\n", module, host, parasite);
+                                modules_file.write_all(line.as_bytes())?;
                             }
                         }
+                        modules_file.flush()?;
                     } else if dirtlpawbplus {
                         // probably let user input reps in future.
                         let LpaWbPlus { modularity, .. } = int_mat.dirt_lpa_wb_plus(2, 2);
