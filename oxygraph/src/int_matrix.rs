@@ -3,6 +3,7 @@
 //! possible combinations of hosts/parasites (or sites/species).
 
 use crate::bipartite::BipartiteGraph;
+use crate::bipartite::Partition;
 use crate::modularity;
 use crate::modularity::PlotData;
 use crate::sort::*;
@@ -30,6 +31,19 @@ pub enum BarbersMatrixError {
 ///
 /// Internally represented by `ndarray::Array2<f64>`.
 pub type Matrix = Array2<f64>;
+
+/// Compute entropy (Shannon) for a frequency matrix
+fn entropy(matrix: &Matrix) -> f64 {
+    let total = matrix.sum();
+    matrix
+        .iter()
+        .filter(|&&v| v > 0.0)
+        .map(|&v| {
+            let p = v / total;
+            -p * p.ln()
+        })
+        .sum()
+}
 
 /// Result structure for the Nested NODF calculation, modeled after the `vegan::nestednodf` output.
 #[derive(Debug, Clone)]
@@ -776,6 +790,299 @@ impl InteractionMatrix {
         }
     }
 
+    /// Compute the H2' specialization index for a bipartite interaction matrix.
+    ///
+    /// This implementation replicates the integer-aware behavior of the R `bipartite::H2fun` function
+    /// with `H2_integer = TRUE`. It assumes the matrix contains only non-negative integer entries.
+    ///
+    /// The method measures network-level specialization based on deviation from maximum entropy
+    /// (uncorrected Shannon entropy of interaction frequencies) and compares this with a maximum
+    /// entropy matrix (subject to integer constraints) and a minimum entropy configuration derived
+    /// by greedily filling the matrix while maintaining row and column marginal totals.
+    ///
+    /// Returned value is:
+    /// ```
+    /// H2' = (H2_max - H2_uncorr) / (H2_max - H2_min)
+    /// ```
+    /// where:
+    /// - `H2_uncorr` is the observed entropy of the interaction matrix
+    /// - `H2_max` is the entropy of an integer-approximated expected matrix under independence
+    /// - `H2_min` is the entropy of a maximally specialized (minimum entropy) matrix
+    ///
+    /// Panics if the matrix contains non-integer values.
+    ///
+    /// # Returns
+    /// `f64` — the H2' value, in the range [0, 1], where 1 indicates maximum specialization.
+    ///
+    /// # Example
+    /// ```rust
+    /// let data = array![
+    ///     [1.0, 0.0, 1.0],
+    ///     [0.0, 2.0, 0.0],
+    ///     [0.0, 1.0, 1.0]
+    /// ];
+    /// let matrix = InteractionMatrix::from(data);
+    /// let h2p = matrix.h2_prime();
+    /// assert!(h2p >= 0.0 && h2p <= 1.0);
+    /// ```
+    pub fn h2_prime(&self) -> f64 {
+        let matrix = &self.inner;
+
+        if matrix.iter().any(|&v| v.fract() != 0.0) {
+            panic!("Matrix contains non-integer values. Set H2_integer = FALSE to bypass.");
+        }
+
+        let total: f64 = matrix.sum();
+        if total == 0.0 {
+            return f64::NAN;
+        }
+
+        // H2_uncorr = entropy of original matrix
+        let h2_uncorr = entropy(matrix);
+
+        // Expected frequencies
+        let row_sums = matrix.sum_axis(Axis(1));
+        let col_sums = matrix.sum_axis(Axis(0));
+        let expected = row_sums.view().to_owned().insert_axis(Axis(1))
+            * col_sums.view().to_owned().insert_axis(Axis(0))
+            / total;
+
+        // Integer-aware max entropy matrix (rounded expected + refinement)
+        let mut newweb = expected.mapv(f64::floor);
+        let mut diff = &expected - &newweb;
+        let mut rsum = newweb.sum();
+
+        while (rsum - total).abs() > 1e-6 {
+            let mut best = None;
+            let mut max_diff = f64::MIN;
+
+            for ((i, j), &d) in diff.indexed_iter() {
+                if d > max_diff {
+                    best = Some((i, j));
+                    max_diff = d;
+                }
+            }
+            if let Some((i, j)) = best {
+                newweb[[i, j]] += 1.0;
+                diff[[i, j]] = 0.0;
+                rsum += 1.0;
+            } else {
+                break;
+            }
+        }
+
+        let h2_max = entropy(&newweb);
+
+        // Integer-aware min entropy matrix: greedily fill row/col maxima
+        let mut h2_min_matrix = Array2::<f64>::zeros(matrix.raw_dim());
+        let mut rs_remaining = row_sums.to_vec();
+        let mut cs_remaining = col_sums.to_vec();
+
+        while rs_remaining.iter().sum::<f64>() > 0.0 {
+            let (i, rmax) = rs_remaining
+                .iter()
+                .enumerate()
+                .filter(|(_, &v)| v > 0.0)
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap();
+            let (j, cmax) = cs_remaining
+                .iter()
+                .enumerate()
+                .filter(|(_, &v)| v > 0.0)
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap();
+            let minval = rmax.min(*cmax);
+            h2_min_matrix[[i, j]] = minval;
+            rs_remaining[i] -= minval;
+            cs_remaining[j] -= minval;
+        }
+
+        let h2_min = entropy(&h2_min_matrix);
+
+        // Safeguards for corner cases
+        let h2_min = h2_min.min(h2_uncorr);
+        let h2_max = h2_max.max(h2_uncorr);
+
+        if (h2_max - h2_min).abs() < 1e-12 {
+            return 0.0;
+        }
+
+        (h2_max - h2_uncorr) / (h2_max - h2_min)
+    }
+
+    /// Calculate d' (d-prime) specialization for each species in a bipartite interaction matrix.
+    ///
+    /// d′ quantifies how much a species deviates from using partners in proportion to their availability.
+    /// It is 0 for complete generalists and 1 for complete specialists.
+    ///
+    /// # Arguments
+    /// * `partition` - Whether to calculate d′ for rows (Parasites) or columns (Hosts).
+    /// * `abundances` - Abundance of each species in the partition. If absent, then the background
+    /// frequencies q as the column sums (or row sums) of the interaction matrix are calculated,
+    /// normalized by the total
+    ///
+    /// # Returns
+    /// A vector of `(species_name, optional<d_prime_value>)` tuples.
+    pub fn d_prime(
+        &self,
+        partition: Partition,
+        abundances: Option<&[f64]>,
+    ) -> Vec<(String, Option<f64>)> {
+        let (mat, names, num, q): (Array2<f64>, &Vec<String>, usize, Vec<f64>) = match partition {
+            // parasites == rows
+            Partition::Parasites => {
+                let num_cols = self.inner.ncols();
+                let q = if let Some(abuns) = abundances {
+                    assert_eq!(abuns.len(), num_cols);
+                    let total: f64 = abuns.iter().sum();
+                    abuns.iter().map(|a| a / total).collect()
+                } else {
+                    let col_sums: Vec<f64> = self
+                        .inner
+                        .axis_iter(ndarray::Axis(1))
+                        .map(|col| col.sum())
+                        .collect();
+                    let total: f64 = col_sums.iter().sum();
+                    col_sums.iter().map(|c| c / total).collect()
+                };
+                (self.inner.clone(), &self.rownames, self.inner.nrows(), q)
+            }
+            // hosts == columns
+            Partition::Hosts => {
+                let transposed = self.inner.t();
+                let num_rows = transposed.ncols();
+                let q = if let Some(abuns) = abundances {
+                    assert_eq!(abuns.len(), num_rows);
+                    let total: f64 = abuns.iter().sum();
+                    abuns.iter().map(|a| a / total).collect()
+                } else {
+                    let row_sums: Vec<f64> = transposed
+                        .axis_iter(ndarray::Axis(1))
+                        .map(|row| row.sum())
+                        .collect();
+                    let total: f64 = row_sums.iter().sum();
+                    row_sums.iter().map(|r| r / total).collect()
+                };
+                (
+                    transposed.into_owned(),
+                    &self.colnames,
+                    self.inner.ncols(),
+                    q,
+                )
+            }
+        };
+
+        let col_sums: Vec<f64> = mat
+            .axis_iter(ndarray::Axis(1))
+            .map(|col| col.sum())
+            .collect();
+        let total_matrix_sum = mat.sum();
+
+        (0..num)
+            .map(|i| {
+                let row = mat.row(i);
+                let name = names[i].clone();
+                let row_sum: f64 = row.sum();
+                if row_sum == 0.0 {
+                    return (name, None);
+                }
+
+                let d_raw: f64 = row
+                    .iter()
+                    .zip(q.iter())
+                    .filter_map(|(&xj, &qj)| {
+                        if xj > 0.0 && qj > 0.0 {
+                            let pj = xj / row_sum;
+                            Some(pj * (pj / qj).ln())
+                        } else {
+                            None
+                        }
+                    })
+                    .sum();
+
+                // d_min: greedy redistribution
+                let expected: Vec<usize> = q
+                    .iter()
+                    .map(|&qj| (qj * row_sum).floor() as usize)
+                    .collect();
+                let mut residual = row_sum as usize - expected.iter().sum::<usize>();
+                let mut x_new = expected.clone();
+
+                while residual > 0 {
+                    let mut best_idx = None;
+                    let mut best_d = f64::INFINITY;
+
+                    for j in 0..q.len() {
+                        if abundances.is_none() && x_new[j] >= col_sums[j] as usize {
+                            continue;
+                        }
+
+                        x_new[j] += 1;
+                        let xsum = x_new.iter().sum::<usize>() as f64;
+                        let d_candidate: f64 = x_new
+                            .iter()
+                            .zip(q.iter())
+                            .filter_map(|(&xj, &qj)| {
+                                if xj > 0 && qj > 0.0 {
+                                    let pj = xj as f64 / xsum;
+                                    Some(pj * (pj / qj).ln())
+                                } else {
+                                    None
+                                }
+                            })
+                            .sum();
+                        x_new[j] -= 1;
+
+                        if d_candidate < best_d {
+                            best_d = d_candidate;
+                            best_idx = Some(j);
+                        }
+                    }
+
+                    if let Some(idx) = best_idx {
+                        x_new[idx] += 1;
+                    }
+                    residual -= 1;
+                }
+
+                let xsum = x_new.iter().sum::<usize>() as f64;
+                let d_min: f64 = x_new
+                    .iter()
+                    .zip(q.iter())
+                    .filter_map(|(&xj, &qj)| {
+                        if xj > 0 && qj > 0.0 {
+                            let pj = xj as f64 / xsum;
+                            Some(pj * (pj / qj).ln())
+                        } else {
+                            None
+                        }
+                    })
+                    .sum();
+
+                let d_max = if abundances.is_some() {
+                    let min_q = q
+                        .iter()
+                        .copied()
+                        .filter(|&qj| qj > 0.0)
+                        .fold(f64::INFINITY, f64::min);
+                    if min_q == 0.0 || min_q == f64::INFINITY {
+                        return (name, None);
+                    }
+                    (1.0 / min_q).ln()
+                } else {
+                    (total_matrix_sum / row_sum).ln()
+                };
+
+                if (d_max - d_min).abs() < 1e-12 {
+                    return (name, None);
+                }
+
+                let d_prime = (d_raw - d_min) / (d_max - d_min);
+                (name, Some(d_prime))
+            })
+            .collect()
+    }
+
     /// Run the `LPAwb+` modularity algorithm on the matrix.
     ///
     /// # Arguments
@@ -853,6 +1160,17 @@ mod tests {
     mod tests {
         use super::*;
         use ndarray::array;
+
+        fn precision_f64(x: f64, decimals: u32) -> f64 {
+            if x == 0. || decimals == 0 {
+                0.
+            } else {
+                let shift = decimals as i32 - x.abs().log10().ceil() as i32;
+                let shift_factor = 10_f64.powi(shift);
+
+                (x * shift_factor).round() / shift_factor
+            }
+        }
 
         #[test]
         fn test_empty_matrix() {
@@ -1009,6 +1327,90 @@ mod tests {
                 "Expected NODF 12.5, got {}",
                 nodf_score.nodf
             );
+        }
+
+        #[test]
+        fn test_dprime_safariland() {
+            let data = array![
+                [673.0, 0.0, 110.0, 0.0, 0.0],
+                [0.0, 154.0, 0.0, 0.0, 5.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 67.0, 0.0, 0.0, 5.0],
+                [0.0, 0.0, 6.0, 0.0, 4.0]
+            ];
+
+            let matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec![
+                    "AC".into(),
+                    "AA".into(),
+                    "SP".into(),
+                    "BD".into(),
+                    "RE".into(),
+                ],
+                colnames: vec![
+                    "PA".into(),
+                    "BD".into(),
+                    "RM".into(),
+                    "TA".into(),
+                    "SO".into(),
+                ],
+            };
+
+            let dprimes = matrix.d_prime(Partition::Parasites, None);
+
+            let expected = vec![
+                Some(0.9721944),
+                Some(0.7947769),
+                None,
+                Some(0.5547131),
+                Some(0.5060748),
+            ];
+
+            for ((spp, dp), expected) in dprimes.iter().zip(expected) {
+                assert!(
+                    precision_f64(dp.unwrap_or(0.0), 2)
+                        == precision_f64(expected.unwrap_or(0.0), 2),
+                    "For {:?} got {:?}: expected {:?}",
+                    spp,
+                    dp,
+                    expected
+                );
+            }
+        }
+
+        #[test]
+        fn test_h2() {
+            let data = array![
+                [673.0, 0.0, 110.0, 0.0, 0.0],
+                [0.0, 154.0, 0.0, 0.0, 5.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 67.0, 0.0, 0.0, 5.0],
+                [0.0, 0.0, 6.0, 0.0, 4.0]
+            ];
+
+            let matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec![
+                    "AC".into(),
+                    "AA".into(),
+                    "SP".into(),
+                    "BD".into(),
+                    "RE".into(),
+                ],
+                colnames: vec![
+                    "PA".into(),
+                    "BD".into(),
+                    "RM".into(),
+                    "TA".into(),
+                    "SO".into(),
+                ],
+            };
+
+            let h2p = matrix.h2_prime();
+
+            eprintln!("H2': {}", h2p);
+            assert!(precision_f64(h2p, 2) == precision_f64(0.9804165, 2));
         }
     }
 }
