@@ -833,73 +833,160 @@ impl InteractionMatrix {
         }
 
         let total: f64 = matrix.sum();
-        if total == 0.0 {
-            return f64::NAN;
-        }
-
-        // H2_uncorr = entropy of original matrix
-        let h2_uncorr = entropy(matrix);
-
-        // Expected frequencies
         let row_sums = matrix.sum_axis(Axis(1));
         let col_sums = matrix.sum_axis(Axis(0));
-        let expected = row_sums.view().to_owned().insert_axis(Axis(1))
-            * col_sums.view().to_owned().insert_axis(Axis(0))
-            / total;
 
-        // Integer-aware max entropy matrix (rounded expected + refinement)
+        // H2uncorr = entropy of original matrix
+        let h2_uncorr = entropy(matrix);
+
+        let expected = row_sums.clone()
+    .insert_axis(Axis(1)) // shape (rows, 1)
+    * col_sums.clone().insert_axis(Axis(0)) // shape (1, cols)
+    / total;
+
+        // Build integer-aware expected matrix
         let mut newweb = expected.mapv(f64::floor);
-        let mut diff = &expected - &newweb;
-        let mut rsum = newweb.sum();
+        let mut difexp = &expected - &newweb;
+        let mut webfull = Array2::<bool>::from_elem(matrix.raw_dim(), false);
 
-        while (rsum - total).abs() > 1e-6 {
-            let mut best = None;
-            let mut max_diff = f64::MIN;
-
-            for ((i, j), &d) in diff.indexed_iter() {
-                if d > max_diff {
-                    best = Some((i, j));
-                    max_diff = d;
+        while newweb.sum() < total {
+            // Mark filled rows and columns
+            for (i, sum) in newweb.sum_axis(Axis(1)).iter().enumerate() {
+                if (*sum - row_sums[i]).abs() < 1e-6 {
+                    for j in 0..matrix.ncols() {
+                        webfull[[i, j]] = true;
+                    }
                 }
             }
-            if let Some((i, j)) = best {
+            for (j, sum) in newweb.sum_axis(Axis(0)).iter().enumerate() {
+                if (*sum - col_sums[j]).abs() < 1e-6 {
+                    for i in 0..matrix.nrows() {
+                        webfull[[i, j]] = true;
+                    }
+                }
+            }
+
+            let mut best_val = f64::MIN;
+            let mut best_pos = None;
+            for ((i, j), &val) in newweb.indexed_iter() {
+                if !webfull[[i, j]] {
+                    if val == difexp[[i, j]].floor() {
+                        let diff = difexp[[i, j]];
+                        if diff > best_val {
+                            best_val = diff;
+                            best_pos = Some((i, j));
+                        }
+                    }
+                }
+            }
+
+            if let Some((i, j)) = best_pos {
                 newweb[[i, j]] += 1.0;
-                diff[[i, j]] = 0.0;
-                rsum += 1.0;
+                difexp[[i, j]] = expected[[i, j]] - newweb[[i, j]];
             } else {
                 break;
             }
         }
 
-        let h2_max = entropy(&newweb);
+        let mut h2_max = entropy(&newweb);
 
-        // Integer-aware min entropy matrix: greedily fill row/col maxima
-        let mut h2_min_matrix = Array2::<f64>::zeros(matrix.raw_dim());
+        // Local refinement
+        if expected.iter().cloned().fold(f64::MIN, f64::max) > (1.0 / std::f64::consts::E) * total {
+            for _ in 0..500 {
+                let mut newmx = newweb.clone();
+                let difexp = &expected - &newmx;
+
+                let min_val = difexp.iter().cloned().fold(f64::INFINITY, f64::min);
+                let mut best = (0, 0);
+                for ((i, j), &val) in difexp.indexed_iter() {
+                    if val == min_val
+                        && newmx[[i, j]] == newmx.iter().cloned().fold(f64::MIN, f64::max)
+                    {
+                        best = (i, j);
+                        break;
+                    }
+                }
+
+                newmx[[best.0, best.1]] -= 1.0;
+
+                let row_dif = difexp.row(best.0);
+                let col_dif = difexp.column(best.1);
+
+                let mr = row_dif.iter().cloned().fold(f64::MIN, f64::max);
+                let mc = col_dif.iter().cloned().fold(f64::MIN, f64::max);
+
+                if mr >= mc {
+                    let scnd = row_dif
+                        .iter()
+                        .enumerate()
+                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                        .unwrap()
+                        .0;
+                    newmx[[best.0, scnd]] += 1.0;
+
+                    let thrd = difexp
+                        .column(scnd)
+                        .iter()
+                        .enumerate()
+                        .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                        .unwrap()
+                        .0;
+                    newmx[[thrd, scnd]] -= 1.0;
+                    newmx[[thrd, best.1]] += 1.0;
+                } else {
+                    let scnd = col_dif
+                        .iter()
+                        .enumerate()
+                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                        .unwrap()
+                        .0;
+                    newmx[[scnd, best.1]] += 1.0;
+
+                    let thrd = difexp
+                        .row(scnd)
+                        .iter()
+                        .enumerate()
+                        .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                        .unwrap()
+                        .0;
+                    newmx[[scnd, thrd]] -= 1.0;
+                    newmx[[best.0, thrd]] += 1.0;
+                }
+
+                newweb = newmx;
+            }
+        }
+
+        let h2_max_improved = entropy(&newweb);
+        if h2_max_improved > h2_max {
+            h2_max = h2_max_improved;
+        }
+
+        // H2_min construction
+        let mut newweb_min = Array2::<f64>::zeros(matrix.raw_dim());
         let mut rs_remaining = row_sums.to_vec();
         let mut cs_remaining = col_sums.to_vec();
 
-        while rs_remaining.iter().sum::<f64>() > 0.0 {
-            let (i, rmax) = rs_remaining
+        while rs_remaining.iter().sum::<f64>().round() != 0.0 {
+            let (i, &rmax) = rs_remaining
                 .iter()
                 .enumerate()
-                .filter(|(_, &v)| v > 0.0)
                 .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
                 .unwrap();
-            let (j, cmax) = cs_remaining
+            let (j, &cmax) = cs_remaining
                 .iter()
                 .enumerate()
-                .filter(|(_, &v)| v > 0.0)
                 .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
                 .unwrap();
-            let minval = rmax.min(*cmax);
-            h2_min_matrix[[i, j]] = minval;
+            let minval = rmax.min(cmax);
+            newweb_min[[i, j]] = minval;
             rs_remaining[i] -= minval;
             cs_remaining[j] -= minval;
         }
 
-        let h2_min = entropy(&h2_min_matrix);
+        let pnew = newweb_min.mapv(|x| x / newweb_min.sum());
+        let h2_min = entropy(&pnew);
 
-        // Safeguards for corner cases
         let h2_min = h2_min.min(h2_uncorr);
         let h2_max = h2_max.max(h2_uncorr);
 

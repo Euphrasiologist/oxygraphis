@@ -69,7 +69,15 @@ pub fn cli() -> Command {
                         .arg(
                             arg!(-n --nodf "Compute the NODF number of a *sorted* interaction matrix.")
                                 .action(clap::ArgAction::SetTrue)
-                        ),
+                        )
+                        .arg(
+                            arg!(-d --dprime <PARTITION> "Compute d' (d-prime), a species-level specialization index.")
+                                .value_parser(clap::builder::PossibleValuesParser::new(["parasites", "hosts"]))
+                        )
+                        .arg(
+                            arg!(--h2 "Compute H2', a network-level specialization metric.")
+                                .action(clap::ArgAction::SetTrue)
+                        )
                 )
                 .subcommand(Command::new("derived-graphs")
                     .about("Coerce a bipartite graph into two derived graphs.")
@@ -255,15 +263,37 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let nodf = *im_matches
                         .get_one::<bool>("nodf")
                         .expect("defaulted by clap.");
+                    let h2 = *im_matches.get_one::<bool>("h2").expect("defaulted by clap");
+                    let d_prime = im_matches.get_one::<String>("dprime").cloned();
                     let print = *im_matches
                         .get_one::<bool>("print")
-                        .expect("defaulted by clap");
+                        .expect("defaulted by clap.");
 
                     if im_plot {
                         // change these, especially height might need to
                         // be auto generated
                         im_mat.sort();
                         im_mat.plot(1600, None);
+                    } else if let Some(dp) = d_prime {
+                        if dp == "hosts" {
+                            let dp_hosts = im_mat.d_prime(bipartite::Partition::Hosts, None);
+                            for (host, d_prime) in dp_hosts {
+                                let d_prime_fmt =
+                                    d_prime.map(|e| e.to_string()).unwrap_or("None".into());
+                                stdoutln!("{}\t{}", host, d_prime_fmt)?;
+                            }
+                        } else {
+                            let dp_parasites =
+                                im_mat.d_prime(bipartite::Partition::Parasites, None);
+                            for (parasite, d_prime) in dp_parasites {
+                                let d_prime_fmt =
+                                    d_prime.map(|e| e.to_string()).unwrap_or("None".into());
+                                stdoutln!("{}\t{}", parasite, d_prime_fmt)?;
+                            }
+                        };
+                    } else if h2 {
+                        let h2 = im_mat.h2_prime();
+                        stdoutln!("H2 Prime\n{}", h2)?;
                     } else if nodf {
                         // sort and make nodf.
                         im_mat.sort();
