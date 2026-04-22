@@ -451,8 +451,16 @@ impl BipartiteGraph {
     /// Weighted degree (sum of edge weights).
     pub fn weighted_node_degree(&self, node: NodeIndex) -> f64 {
         let graph = &self.0;
-
-        graph.edges(node).map(|e| *e.weight()).sum()
+        // edges() only returns outgoing edges on directed graphs, so
+        // we must count both directions to match the behaviour of node_degree().
+        graph
+            .edges_directed(node, Direction::Incoming)
+            .map(|e| *e.weight())
+            .sum::<f64>()
+            + graph
+                .edges_directed(node, Direction::Outgoing)
+                .map(|e| *e.weight())
+                .sum::<f64>()
     }
 
     /// Returns weighted degrees (strengths) for nodes in the graph.
@@ -639,15 +647,10 @@ impl BipartiteGraph {
         }
 
         let mut edge_links = String::new();
-        // in order to scale the thickness of the lines ('fitness')
-        // I'll need to find the min/max of the edge weights
 
-        let mut fitness_vec = Vec::new();
-        for edge in graph.edge_references() {
-            fitness_vec.push(*edge.weight());
-        }
+        let fitness_vec: Vec<f64> = graph.edge_references().map(|e| *e.weight()).collect();
 
-        // remove these unwraps.
+        if !fitness_vec.is_empty() {
         let fit_min = fitness_vec
             .iter()
             .min_by(|a, b| a.partial_cmp(b).unwrap())
@@ -676,6 +679,7 @@ impl BipartiteGraph {
                 if i >= 1 { "\t" } else { "" }
             );
         }
+        } // end if !fitness_vec.is_empty()
 
         let svg = format!(
             r#"<svg version="1.1"
@@ -1045,6 +1049,44 @@ mod tests {
         // a -> 2.0, b -> 1.0
         assert!(weighted_degrees.contains(&("a".to_string(), Partition::Parasites, 2.0)));
         assert!(weighted_degrees.contains(&("b".to_string(), Partition::Parasites, 1.0)));
+    }
+
+    #[test]
+    fn test_weighted_degrees_partition_hosts() {
+        let g = make_graph();
+        let weighted_degrees = g.weighted_degrees(Some(Partition::Hosts));
+
+        // c is connected to a (1.0) and b (1.0) -> 2.0
+        // d is connected to a (1.0) -> 1.0
+        // Before the fix, graph.edges() only returned outgoing edges on a
+        // directed graph, so hosts (which only have incoming edges) always
+        // returned 0.0 for weighted degree.
+        assert!(weighted_degrees.contains(&("c".to_string(), Partition::Hosts, 2.0)));
+        assert!(weighted_degrees.contains(&("d".to_string(), Partition::Hosts, 1.0)));
+    }
+
+    #[test]
+    fn test_plot_no_panic_uniform_weights() {
+        // When all edge weights are equal, scale_fit previously produced NaN
+        // (division by zero) causing malformed SVG. This test exercises that path.
+        let mut graph: Graph<SpeciesNode, Fitness> = Graph::new();
+        let a = graph.add_node(SpeciesNode::new("a".into(), Partition::Parasites));
+        let b = graph.add_node(SpeciesNode::new("b".into(), Partition::Parasites));
+        let c = graph.add_node(SpeciesNode::new("c".into(), Partition::Hosts));
+        graph.add_edge(a, c, 5.0);
+        graph.add_edge(b, c, 5.0); // identical weights -> min == max
+        let g = BipartiteGraph(graph);
+        g.plot(800, 400); // must not panic or produce NaN SVG
+    }
+
+    #[test]
+    fn test_plot_no_panic_no_edges() {
+        // A graph with nodes but no edges should produce valid (empty) SVG.
+        let mut graph: Graph<SpeciesNode, Fitness> = Graph::new();
+        let _a = graph.add_node(SpeciesNode::new("a".into(), Partition::Parasites));
+        let _c = graph.add_node(SpeciesNode::new("c".into(), Partition::Hosts));
+        let g = BipartiteGraph(graph);
+        g.plot(800, 400); // must not panic
     }
 
     // degree distribution

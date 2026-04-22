@@ -44,7 +44,7 @@ pub fn cli() -> Command {
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(
-                    arg!(-d --degrees "Return the degrees of a bipartite graph.")
+                    arg!(--degrees "Return the degrees of a bipartite graph.")
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(
@@ -172,7 +172,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
             let input = sub_matches
                 .get_one::<PathBuf>("INPUT_DSV")
                 .expect("required");
-            let delimiter = match sub_matches.get_one::<String>("DELIMITER") {
+            let delimiter = match sub_matches.get_one::<String>("delimiter") {
                 Some(d) => d.bytes().next().unwrap_or(b'\t'),
                 None => b'\t',
             };
@@ -368,8 +368,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     }
                 }
                 Some(("modularity", mod_matches)) => {
-                    // this will probably be used later. Currently not!
-                    let _lpawbplus = *mod_matches
+                    let lpawbplus = *mod_matches
                         .get_one::<bool>("lpawbplus")
                         .expect("defaulted by clap.");
                     let dirtlpawbplus = *mod_matches
@@ -423,9 +422,11 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         // probably let user input reps in future.
                         let LpaWbPlus { modularity, .. } = int_mat.dirt_lpa_wb_plus(2, 2);
                         stdoutln!("DIRTLPAwb+\n{}", modularity)?;
-                    } else {
+                    } else if lpawbplus {
                         let LpaWbPlus { modularity, .. } = int_mat.lpa_wb_plus(None);
                         stdoutln!("LPAwb+\n{}", modularity)?;
+                    } else {
+                        return Err(Error::msg("Please specify --lpawbplus or --dirtlpawbplus."));
                     }
                 }
                 _ => unreachable!("Should never reach here."),

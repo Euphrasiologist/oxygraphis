@@ -640,8 +640,9 @@ impl InteractionMatrix {
         let nr = self.inner.nrows();
         let nc = self.inner.ncols();
 
-        // return early here to avoid error
-        if nr < 2 && nc < 2 {
+        // return early for degenerate matrices — using || prevents usize
+        // underflow in the loop bounds below (e.g. 0usize - 1 would panic).
+        if nr < 2 || nc < 2 {
             return NestedNODFResult {
                 comm: self.inner.clone(),
                 fill: 0.0,
@@ -1498,6 +1499,34 @@ mod tests {
 
             eprintln!("H2': {}", h2p);
             assert!(precision_f64(h2p, 2) == precision_f64(0.9804165, 2));
+        }
+
+        #[test]
+        fn test_nodf_single_row_no_panic() {
+            // A 1-row matrix must return 0.0 without panicking.
+            // Before the || fix the early-return used &&, so a 1×N matrix
+            // would reach `for i in 0..(1usize - 1)` safely (that's 0..0),
+            // but a 0×N matrix would underflow. The || guard handles both.
+            let data = array![[1.0, 0.0, 1.0]];
+            let mut matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec!["A".into()],
+                colnames: vec!["X".into(), "Y".into(), "Z".into()],
+            };
+            let result = matrix.nodf(true, false, false);
+            assert_eq!(result.nodf, 0.0);
+        }
+
+        #[test]
+        fn test_nodf_single_col_no_panic() {
+            let data = array![[1.0], [0.0], [1.0]];
+            let mut matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec!["A".into(), "B".into(), "C".into()],
+                colnames: vec!["X".into()],
+            };
+            let result = matrix.nodf(true, false, false);
+            assert_eq!(result.nodf, 0.0);
         }
     }
 }

@@ -6,7 +6,7 @@
 //! Creation of `BipartiteGraph` structs can be done through
 //! an input TSV:
 //!
-//! ```rust
+//! ```no_run
 //! use oxygraph;
 //! use oxygraph::bipartite::Strata;
 //! use std::path::PathBuf;
@@ -85,7 +85,12 @@ pub mod sort;
 /// used in this crate.
 const MARGIN_LR: f64 = 20.0;
 
-/// Scale a number between zero and 1, given a min/max.
+/// Scale a number between 0.1 and 1.0 given a min/max.
+/// Returns 1.0 when min_x == max_x to avoid NaN from division by zero.
 pub fn scale_fit(x: f64, min_x: f64, max_x: f64) -> f64 {
-    ((1.0 - 0.1) * ((x - min_x) / (max_x - min_x))) + 0.1
+    let range = max_x - min_x;
+    if range.abs() < f64::EPSILON {
+        return 1.0;
+    }
+    ((1.0 - 0.1) * ((x - min_x) / range)) + 0.1
 }

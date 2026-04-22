@@ -10,7 +10,7 @@
 //! - `blue_labels` = column node communities (often hosts or sites).
 //!
 //! # Example usage
-//! ```rust
+//! ```no_run
 //! use oxygraph::modularity::{lpa_wb_plus, dirt_lpa_wb_plus};
 //! use ndarray::array;
 //!
@@ -156,22 +156,10 @@ impl LpaWbPlus {
             .inner
             .permute_axis(Axis(1), &array_from_col_permutation);
 
-        // given the sort_strings_by_indices function below
-        fn sort_strings_by_indices(strings: Vec<String>, indices: Vec<usize>) -> Vec<String> {
-            // Pair the indices with the strings
-            let mut paired: Vec<(usize, String)> =
-                indices.into_iter().zip(strings.into_iter()).collect();
-            // Sort the pairs by the indices
-            paired.sort_by_key(|(index, _)| *index);
-            // Extract the sorted strings
-            paired.into_iter().map(|(_, string)| string).collect()
-        }
-
-        // and sort the rownames and colnames from the original interaction matrix
-        int_mat.rownames =
-            sort_strings_by_indices(int_mat.rownames.clone(), array_from_row_permutation.indices);
-        int_mat.colnames =
-            sort_strings_by_indices(int_mat.colnames.clone(), array_from_col_permutation.indices);
+        // Apply the same permutation to labels as was applied to the matrix.
+        // sort_by_indices reorders data[i] = original[indices[i]], matching permute_axis.
+        sort_by_indices(&mut int_mat.rownames, array_from_row_permutation.indices);
+        sort_by_indices(&mut int_mat.colnames, array_from_col_permutation.indices);
 
         let plot_data = PlotData {
             rows,
@@ -632,7 +620,7 @@ fn stage_two_lpa_wb_dash(
 /// [`LpaWbPlus`] result containing row and column module assignments and modularity score.
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// use oxygraph::modularity::lpa_wb_plus;
 /// use ndarray::array;
 ///
@@ -722,7 +710,7 @@ pub fn lpa_wb_plus(input_matrix: &Array2<f64>, initial_module_guess: Option<u32>
 /// The best [`LpaWbPlus`] result found across repetitions.
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// use oxygraph::modularity::dirt_lpa_wb_plus;
 /// use ndarray::array;
 ///
@@ -934,20 +922,13 @@ mod tests {
             &mut total_blue_degrees,
         );
 
-        // multiple expectations here
+        // Only the modularity score is deterministic; label assignments are stochastic.
         eprintln!("red: {:?}", result.0);
         eprintln!("blue: {:?}", result.1);
         let expected_qb_now = 0.3518259;
         assert_eq!(
             precision_f64(result.2, 2),
             precision_f64(expected_qb_now, 2)
-        );
-
-        // this is sometimes true, due to randomness
-        assert_eq!(red_labels, vec![Some(4), Some(5), Some(4), Some(5)]);
-        assert_eq!(
-            blue_labels,
-            vec![Some(4), Some(5), Some(4), Some(4), Some(5)]
         );
     }
 

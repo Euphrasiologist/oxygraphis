@@ -92,12 +92,9 @@ impl DerivedGraph {
 
         // now let's make the edges
         let mut edges = String::new();
-        let mut connections_vec = Vec::new();
-        for edge in graph.edge_references() {
-            connections_vec.push(*edge.weight());
-        }
+        let connections_vec: Vec<usize> = graph.edge_references().map(|e| *e.weight()).collect();
 
-        // remove these unwraps.
+        if !connections_vec.is_empty() {
         let con_min = *connections_vec.iter().min().unwrap() as f64;
         let con_max = *connections_vec.iter().max().unwrap() as f64;
 
@@ -132,6 +129,7 @@ impl DerivedGraph {
                 "<line x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\" stroke=\"black\" stroke-width=\"{scaled_connections}\"><title>{edge_title_string}</title></line>\n"
             );
         }
+        } // end if !connections_vec.is_empty()
 
         let viewbox_param1 = (-(diameter) / 1.0) - MARGIN_LR;
         let viewbox_param2 = (diameter * 2.0) + (MARGIN_LR * 2.0);
@@ -408,5 +406,24 @@ mod tests {
         assert_eq!(stats.host_nodes, 0);
         assert_eq!(stats.host_edges, 0);
         assert_eq!(stats.host_edges_filtered, 0);
+    }
+
+    #[test]
+    fn test_plot_no_panic_no_shared_hosts() {
+        // Build a bipartite graph where no two parasites share a host,
+        // so the derived parasite graph has no edges. plot() previously
+        // panicked on min/max of an empty connections_vec.
+        let mut graph = Graph::<SpeciesNode, Fitness>::new();
+        let a = graph.add_node(SpeciesNode::new("A".into(), Partition::Parasites));
+        let b = graph.add_node(SpeciesNode::new("B".into(), Partition::Parasites));
+        let x = graph.add_node(SpeciesNode::new("X".into(), Partition::Hosts));
+        let y = graph.add_node(SpeciesNode::new("Y".into(), Partition::Hosts));
+        graph.add_edge(a, x, 1.0); // A only connects to X
+        graph.add_edge(b, y, 1.0); // B only connects to Y — no shared hosts
+        let bp = BipartiteGraph(graph);
+        let derived = DerivedGraphs::from_bipartite(bp);
+        // Parasite graph has 2 nodes but 0 edges
+        assert_eq!(derived.parasites.0.edge_count(), 0);
+        derived.parasites.plot(500.0, 0.0); // must not panic
     }
 }
