@@ -71,6 +71,16 @@ pub fn cli() -> Command {
                                 .action(clap::ArgAction::SetTrue)
                         )
                         .arg(
+                            arg!(-w --weighted "Use weighted NODF (requires --nodf).")
+                                .action(clap::ArgAction::SetTrue)
+                                .requires("nodf")
+                        )
+                        .arg(
+                            arg!(--wbinary "Use weighted-binary NODF (requires --nodf).")
+                                .action(clap::ArgAction::SetTrue)
+                                .requires("nodf")
+                        )
+                        .arg(
                             arg!(-d --dprime <PARTITION> "Compute d' (d-prime), a species-level specialization index.")
                                 .value_parser(clap::builder::PossibleValuesParser::new(["parasites", "hosts"]))
                         )
@@ -216,9 +226,9 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     if bipartite_plot {
                         // make the plot dims CLI args.
                         // but 600 x 400 for now.
-                        bpgraph.plot(1600, 700);
+                        stdoutln!("{}", bpgraph.plot(1600, 700))?;
                     } else if bipartite_plot_2 {
-                        bpgraph.plot_prop(1800, 700);
+                        stdoutln!("{}", bpgraph.plot_prop(1800, 700))?;
                     } else if degrees {
                         let degs = bpgraph.degrees(None);
                         stdoutln!("spp\tstratum\tvalue")?;
@@ -263,6 +273,12 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let nodf = *im_matches
                         .get_one::<bool>("nodf")
                         .expect("defaulted by clap.");
+                    let weighted = *im_matches
+                        .get_one::<bool>("weighted")
+                        .expect("defaulted by clap.");
+                    let wbinary = *im_matches
+                        .get_one::<bool>("wbinary")
+                        .expect("defaulted by clap.");
                     let h2 = *im_matches.get_one::<bool>("h2").expect("defaulted by clap");
                     let d_prime = im_matches.get_one::<String>("dprime").cloned();
                     let print = *im_matches
@@ -295,10 +311,8 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         let h2 = im_mat.h2_prime();
                         stdoutln!("H2 Prime\n{}", h2)?;
                     } else if nodf {
-                        // sort and make nodf.
                         im_mat.sort();
-                        // unweighted
-                        let nodf = im_mat.nodf(true, false, false);
+                        let nodf = im_mat.nodf(true, weighted, wbinary);
                         stdoutln!("NODF\n{}", nodf.nodf)?;
                     } else if print {
                         stdoutln!("{}", im_mat)?;
@@ -340,11 +354,12 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         .expect("defaulted by clap.");
 
                     if dg_plot {
-                        match stratum.as_str() {
+                        let svg = match stratum.as_str() {
                             "host" => dgs.hosts.plot(diameter, remove),
                             "parasite" => dgs.parasites.plot(diameter, remove),
                             _ => unreachable!("Should never reach here."),
-                        }
+                        };
+                        stdoutln!("{}", svg)?;
                     } else {
                         let DerivedGraphStats {
                             parasite_nodes,
@@ -456,7 +471,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
             if plot {
                 let rand_graph = BipartiteGraph::random(parasite_number, host_number, edge_count)?;
 
-                rand_graph.plot(1000, 400);
+                stdoutln!("{}", rand_graph.plot(1000, 400))?;
 
                 // return early here.
                 return Ok(());

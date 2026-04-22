@@ -209,11 +209,9 @@ fn trace(matrix: &Array2<f64>) -> f64 {
     matrix.diag().sum()
 }
 
-fn dedup_preserve_order(vec: Vec<Option<u32>>) -> Vec<Option<u32>> {
+fn dedup_preserve_order<T: Eq + std::hash::Hash + Copy>(items: &[Option<T>]) -> Vec<T> {
     let mut seen = HashSet::new();
-    vec.into_iter()
-        .filter(|item| seen.insert(*item)) // Insert returns true if the item was not already present
-        .collect()
+    items.iter().filter_map(|&x| x).filter(|v| seen.insert(*v)).collect()
 }
 
 fn weighted_modularity2(
@@ -222,8 +220,8 @@ fn weighted_modularity2(
     red_labels: &[Option<u32>],
     blue_labels: &[Option<u32>],
 ) -> f64 {
-    let uni_red: Vec<Option<u32>> = dedup_preserve_order(red_labels.to_vec());
-    let uni_blue: Vec<Option<u32>> = dedup_preserve_order(blue_labels.to_vec());
+    let uni_red: Vec<u32> = dedup_preserve_order(red_labels);
+    let uni_blue: Vec<u32> = dedup_preserve_order(blue_labels);
     let l_red = uni_red.len();
     let l_blue = uni_blue.len();
 
@@ -231,16 +229,16 @@ fn weighted_modularity2(
     let mut label_mat2 = Array2::<f64>::zeros((blue_labels.len(), l_blue));
 
     for (i, &label) in red_labels.iter().enumerate() {
-        if let Some(_) = label {
-            if let Some(pos) = uni_red.iter().position(|&x| x == label) {
+        if let Some(val) = label {
+            if let Some(pos) = uni_red.iter().position(|&x| x == val) {
                 label_mat1[(pos, i)] = 1.0;
             }
         }
     }
 
     for (i, &label) in blue_labels.iter().enumerate() {
-        if let Some(_) = label {
-            if let Some(pos) = uni_blue.iter().position(|&x| x == label) {
+        if let Some(val) = label {
+            if let Some(pos) = uni_blue.iter().position(|&x| x == val) {
                 label_mat2[(i, pos)] = 1.0;
             }
         }
@@ -249,19 +247,6 @@ fn weighted_modularity2(
     let intermediate = label_mat1.dot(matrix).dot(&label_mat2);
 
     trace(&intermediate) / mat_sum
-}
-
-fn dedup_preserve_order2<T: Eq + std::hash::Hash + Copy>(vec: &[Option<T>]) -> Vec<T> {
-    let mut seen = std::collections::HashSet::new();
-    let mut result = Vec::new();
-    for &item in vec.iter() {
-        if let Some(val) = item {
-            if seen.insert(val) {
-                result.push(val);
-            }
-        }
-    }
-    result
 }
 
 fn local_maximisation(
@@ -289,7 +274,7 @@ fn local_maximisation(
         let old_tbd = total_blue_degrees.clone();
 
         // Update blue labels
-        let blue_label_choices: Vec<_> = dedup_preserve_order2(red_labels);
+        let blue_label_choices: Vec<_> = dedup_preserve_order(red_labels);
 
         for (bb, blue_label) in blue_labels.iter_mut().enumerate() {
             if let Some(blue_label_val) = blue_label {
@@ -347,7 +332,7 @@ fn local_maximisation(
         }
 
         // Update red labels
-        let red_label_choices: Vec<_> = dedup_preserve_order2(blue_labels);
+        let red_label_choices: Vec<_> = dedup_preserve_order(blue_labels);
 
         for (aa, red_label) in red_labels.iter_mut().enumerate() {
             if let Some(red_label_val) = red_label {

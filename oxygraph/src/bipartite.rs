@@ -20,7 +20,7 @@ use petgraph::{
 use rand::{self, seq::IndexedRandom};
 use serde_derive::Deserialize;
 use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
+use std::path::Path;
 use thiserror::Error;
 
 use crate::{scale_fit, MARGIN_LR};
@@ -239,16 +239,16 @@ impl BipartiteGraph {
 
         let mut p_node_indices = Vec::new();
         // add the parasite node indices to the graph
-        for _ in 0..parasite_no {
-            let spnode = SpeciesNode::new("".into(), Partition::Parasites);
+        for i in 0..parasite_no {
+            let spnode = SpeciesNode::new(format!("p{}", i + 1), Partition::Parasites);
             let nidx = graph.add_node(spnode);
             p_node_indices.push(nidx);
         }
 
         let mut h_node_indices = Vec::new();
         // add the host node indices to the graph
-        for _ in 0..host_no {
-            let spnode = SpeciesNode::new("".into(), Partition::Hosts);
+        for i in 0..host_no {
+            let spnode = SpeciesNode::new(format!("h{}", i + 1), Partition::Hosts);
             let nidx = graph.add_node(spnode);
             h_node_indices.push(nidx);
         }
@@ -302,10 +302,10 @@ impl BipartiteGraph {
     ///
     /// # Returns
     /// `Ok(BipartiteGraph)` on success, or `ReadDSVError` on failure.
-    pub fn from_dsv(input: &PathBuf, delimiter: u8) -> Result<Self, ReadDSVError> {
+    pub fn from_dsv(input: impl AsRef<Path>, delimiter: u8) -> Result<Self, ReadDSVError> {
         let mut rdr = ReaderBuilder::new()
             .delimiter(delimiter)
-            .from_path(input)
+            .from_path(input.as_ref())
             .map_err(|s| ReadDSVError::FromPath { source: s })?;
 
         let mut edges = Vec::new();
@@ -577,7 +577,7 @@ impl BipartiteGraph {
     /// # Arguments
     /// * `width` - Width of the SVG canvas.
     /// * `height` - Height of the SVG canvas.
-    pub fn plot(&self, width: i32, height: i32) {
+    pub fn plot(&self, width: i32, height: i32) -> String {
         let graph = &self.0;
 
         // some consts and fns
@@ -692,7 +692,7 @@ impl BipartiteGraph {
         "#
         );
 
-        let _ = stdoutln!("{}", svg);
+        svg
     }
 
     /// Plots the bipartite graph as a proportional diagram (Sankey-like).
@@ -704,7 +704,7 @@ impl BipartiteGraph {
     /// # Arguments
     /// * `width` - Width of the SVG canvas.
     /// * `height` - Height of the SVG canvas.
-    pub fn plot_prop(&self, width: i32, height: i32) {
+    pub fn plot_prop(&self, width: i32, height: i32) -> String {
         let graph = &self.0;
 
         let canvas_width = width as f64 - (2.0 * MARGIN_LR);
@@ -920,7 +920,7 @@ impl BipartiteGraph {
         "#
         );
 
-        let _ = stdoutln!("{}", svg);
+        svg
     }
 
     /// Exports the bipartite graph to a tab-separated values (TSV) string.

@@ -41,12 +41,24 @@ pub type Shared = usize;
 pub struct DerivedGraph(pub UnGraph<(Species, Connections), Shared>);
 
 impl DerivedGraph {
-    /// Compute an overlap measure for the derived graph.
+    /// Compute Jaccard similarity for each pair of species in the derived graph.
     ///
-    /// This function is a placeholder and will calculate overlap metrics (e.g., Jaccard similarity)
-    /// for species in the same stratum. Not yet implemented.
-    pub fn overlap_measure() {
-        todo!()
+    /// Returns a `Vec` of `(species_a, species_b, jaccard)` tuples for every edge,
+    /// where `jaccard = shared / (|A| + |B| - shared)`.
+    pub fn overlap_measure(&self) -> Vec<(String, String, f64)> {
+        self.0
+            .edge_references()
+            .map(|e| {
+                let (n1, n2) = (
+                    self.0.node_weight(e.source()).unwrap(),
+                    self.0.node_weight(e.target()).unwrap(),
+                );
+                let shared = *e.weight();
+                let union = n1.1 + n2.1 - shared;
+                let jaccard = if union == 0 { 0.0 } else { shared as f64 / union as f64 };
+                (n1.0.clone(), n2.0.clone(), jaccard)
+            })
+            .collect()
     }
 
     /// Plot the derived graph as a circular layout in SVG format.
@@ -61,7 +73,7 @@ impl DerivedGraph {
     ///
     /// Modified from a reference here:
     /// <https://observablehq.com/@euphrasiologist/hybridisation-in-the-genus-saxifraga>
-    pub fn plot(&self, diameter: f64, remove: f64) {
+    pub fn plot(&self, diameter: f64, remove: f64) -> String {
         let graph = &self.0;
         // this will store the positions of the nodes in cartesian space.
         let mut pos = HashMap::new();
@@ -147,7 +159,7 @@ impl DerivedGraph {
 </svg>
         "#
         );
-        let _ = stdoutln!("{}", svg);
+        svg
     }
 }
 

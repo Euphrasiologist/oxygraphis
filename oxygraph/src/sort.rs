@@ -53,7 +53,7 @@ impl Permutation {
         }
     }
 
-    /// Not sure what this does.
+    /// Validates that this is a valid bijective permutation: each index 0..n appears exactly once.
     fn correct(&self) -> bool {
         let axis_len = self.indices.len();
         let mut seen = vec![false; axis_len];

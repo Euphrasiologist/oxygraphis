@@ -1241,13 +1241,8 @@ impl InteractionMatrix {
 
 #[cfg(test)]
 mod tests {
-    // bring everything in from above
     use super::*;
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use ndarray::array;
+    use ndarray::array;
 
         fn precision_f64(x: f64, decimals: u32) -> f64 {
             if x == 0. || decimals == 0 {
@@ -1528,5 +1523,4 @@ mod tests {
             let result = matrix.nodf(true, false, false);
             assert_eq!(result.nodf, 0.0);
         }
-    }
 }
