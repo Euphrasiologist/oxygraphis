@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use thiserror::Error;
 
-use crate::{scale_fit, MARGIN_LR};
+use crate::{rescale, MARGIN_LR};
 
 /// Error type for reading in a DSV.
 #[derive(Error, Debug)]
@@ -637,7 +637,7 @@ impl BipartiteGraph {
 
             host_nodes += &format!(
                 "<circle cx=\"{x}\" cy=\"{y}\" r=\"{}\" fill=\"red\"><title>{spp_name}</title></circle>\n{}",
-                scale_fit(
+                rescale(
                     r as f64,
                     *incoming_nodes_vec.iter().min().unwrap() as f64,
                     *incoming_nodes_vec.iter().max().unwrap() as f64
@@ -675,7 +675,7 @@ impl BipartiteGraph {
 
             edge_links += &format!(
                 "<line x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\" stroke=\"black\" stroke-width=\"{}\"/>\n{}",
-                scale_fit(fitness, *fit_min, *fit_max),
+                rescale(fitness, *fit_min, *fit_max),
                 if i >= 1 { "\t" } else { "" }
             );
         }
@@ -1067,7 +1067,7 @@ mod tests {
 
     #[test]
     fn test_plot_no_panic_uniform_weights() {
-        // When all edge weights are equal, scale_fit previously produced NaN
+        // When all edge weights are equal, rescale previously produced NaN
         // (division by zero) causing malformed SVG. This test exercises that path.
         let mut graph: Graph<SpeciesNode, Fitness> = Graph::new();
         let a = graph.add_node(SpeciesNode::new("a".into(), Partition::Parasites));

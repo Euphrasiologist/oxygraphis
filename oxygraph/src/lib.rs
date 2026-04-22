@@ -86,9 +86,17 @@ pub mod sort;
 /// used in this crate.
 const MARGIN_LR: f64 = 20.0;
 
-/// Scale a number between 0.1 and 1.0 given a min/max.
-/// Returns 1.0 when min_x == max_x to avoid NaN from division by zero.
-pub fn scale_fit(x: f64, min_x: f64, max_x: f64) -> f64 {
+/// Linearly rescale `x` from the range `[min_x, max_x]` into `[0.1, 1.0]`.
+///
+/// Returns `1.0` when `min_x == max_x` (avoids NaN from zero-range division).
+/// Used to map data values to SVG stroke widths and node radii.
+///
+/// # Example
+/// ```
+/// let scaled = oxygraph::rescale(5.0, 0.0, 10.0);
+/// assert!((scaled - 0.55).abs() < 1e-10);
+/// ```
+pub fn rescale(x: f64, min_x: f64, max_x: f64) -> f64 {
     let range = max_x - min_x;
     if range.abs() < f64::EPSILON {
         return 1.0;

@@ -12,7 +12,7 @@
 
 use crate::bipartite::SpeciesNode;
 use crate::BipartiteGraph;
-use crate::{scale_fit, MARGIN_LR};
+use crate::{rescale, MARGIN_LR};
 use calm_io::*;
 use itertools::Itertools;
 use petgraph::{
@@ -118,7 +118,7 @@ impl DerivedGraph {
 
             // needs to be mutable if logic hashed out below is used.
             let mut scaled_connections =
-                scale_fit(no_connections as f64, con_min + 1.0, con_max) * 6.0;
+                rescale(no_connections as f64, con_min + 1.0, con_max) * 6.0;
 
             // as in, we don't care if they share one host.
             // but this could be an input parameter.

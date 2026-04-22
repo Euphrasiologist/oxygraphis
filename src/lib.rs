@@ -324,8 +324,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             stdoutln!("{}\t{}\t{}\t{}\t{}", observed, mean_null, sd_null, p_value, n_permutations)?;
                         }
                     } else if nodf {
-                        im_mat.sort();
-                        let nodf_result = im_mat.nodf(false, weighted, wbinary);
+                        let nodf_result = im_mat.nodf(true, weighted, wbinary);
                         stdoutln!("NODF\t{}", nodf_result.nodf)?;
                         if let Some(n) = permutations {
                             let PermutationTestResult {
@@ -510,9 +509,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
 
                     match calculation.as_str() {
                         "nodf" => {
-                            let mut im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                            im_mat.sort();
-                            // unweighted
+                            let im_mat = InteractionMatrix::from_bipartite(rand_graph);
                             let nodf = im_mat.nodf(true, false, false);
                             if !nodf.nodf.is_nan() {
                                 stdoutln!("{}", nodf.nodf)?;

@@ -179,7 +179,7 @@ fn division(red_labels: &[Option<u32>], blue_labels: &[Option<u32>]) -> HashSet<
     red_set.intersection(&blue_set).cloned().collect()
 }
 
-fn barbers_matrix(matrix: &Array2<f64>) -> Array2<f64> {
+pub(crate) fn barbers_matrix(matrix: &Array2<f64>) -> Array2<f64> {
     let row_sums = matrix.sum_axis(Axis(1)).insert_axis(Axis(1)); // Column vector
     let col_sums = matrix.sum_axis(Axis(0)).insert_axis(Axis(0)); // Row vector
     let total_sum = matrix.sum();

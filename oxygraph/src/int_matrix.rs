@@ -18,16 +18,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::io::Write;
 use std::path::PathBuf;
-use thiserror::Error;
 
-/// Error returned when constructing Barber's matrix fails.
-///
-/// Usually caused by a matrix shape mismatch when reshaping rows/columns.
-#[derive(Error, Debug)]
-pub enum BarbersMatrixError {
-    #[error("Could not coerce Barbers matrix into a 2 x 1 matrix.")]
-    Error(#[from] ndarray::ShapeError),
-}
+
 
 /// A 2D interaction matrix using floating-point weights.
 ///
@@ -658,15 +650,28 @@ impl InteractionMatrix {
     /// assert_eq!(nodf.nodf, 100.0);
     /// assert_eq!(nodf.fill, 6.0 / 9.0);
     /// ```
-    pub fn nodf(&mut self, order: bool, weighted: bool, wbinary: bool) -> NestedNODFResult {
-        let nr = self.inner.nrows();
-        let nc = self.inner.ncols();
+    pub fn nodf(&self, order: bool, weighted: bool, wbinary: bool) -> NestedNODFResult {
+        // If ordering is requested, work on a sorted clone so `self` is unchanged.
+        let owned;
+        let m: &Self = if order {
+            owned = {
+                let mut tmp = self.clone();
+                tmp.sort_by_decreasing_fill(weighted);
+                tmp
+            };
+            &owned
+        } else {
+            self
+        };
+
+        let nr = m.inner.nrows();
+        let nc = m.inner.ncols();
 
         // return early for degenerate matrices — using || prevents usize
         // underflow in the loop bounds below (e.g. 0usize - 1 would panic).
         if nr < 2 || nc < 2 {
             return NestedNODFResult {
-                comm: self.inner.clone(),
+                comm: m.inner.clone(),
                 fill: 0.0,
                 n_rows: 0.0,
                 n_cols: 0.0,
@@ -674,11 +679,7 @@ impl InteractionMatrix {
             };
         }
 
-        if order {
-            self.sort_by_decreasing_fill(weighted);
-        }
-
-        let bin_comm = self.inner.mapv(|x| if x > 0.0 { 1.0 } else { 0.0 });
+        let bin_comm = m.inner.mapv(|x| if x > 0.0 { 1.0 } else { 0.0 });
         let rfill: Vec<usize> = bin_comm
             .axis_iter(Axis(0))
             .map(|r| r.sum() as usize)
@@ -699,14 +700,14 @@ impl InteractionMatrix {
         let mut valid_row_pairs = 0;
 
         for i in 0..(nr - 1) {
-            let first_row = self.inner.row(i);
+            let first_row = m.inner.row(i);
             for j in (i + 1)..nr {
                 if rfill[i] <= rfill[j] || rfill[i] == 0 || rfill[j] == 0 {
                     continue;
                 }
 
                 valid_row_pairs += 1;
-                let second_row = self.inner.row(j);
+                let second_row = m.inner.row(j);
 
                 let overlap = if weighted {
                     if !wbinary {
@@ -743,14 +744,14 @@ impl InteractionMatrix {
         let mut valid_col_pairs = 0;
 
         for i in 0..(nc - 1) {
-            let first_col = self.inner.column(i);
+            let first_col = m.inner.column(i);
             for j in (i + 1)..nc {
                 if cfill[i] <= cfill[j] || cfill[i] == 0 || cfill[j] == 0 {
                     continue;
                 }
 
                 valid_col_pairs += 1;
-                let second_col = self.inner.column(j);
+                let second_col = m.inner.column(j);
 
                 let overlap = if weighted {
                     if !wbinary {
@@ -805,7 +806,7 @@ impl InteractionMatrix {
         };
 
         NestedNODFResult {
-            comm: self.inner.clone(),
+            comm: m.inner.clone(),
             fill: total_fill,
             n_rows,
             n_cols,
@@ -1283,17 +1284,11 @@ impl InteractionMatrix {
     /// Shuffles matrix elements `n` times and computes NODF on each null matrix.
     /// P-value is the proportion of null NODF values ≥ the observed NODF.
     pub fn nodf_permutation_test(&self, n: usize) -> PermutationTestResult {
-        let mut obs = self.clone();
-        obs.sort();
-        let observed = obs.nodf(false, false, false).nodf;
+        let observed = self.nodf(true, false, false).nodf;
 
         let null_scores: Vec<f64> = (0..n)
             .into_par_iter()
-            .map(|_| {
-                let mut null = self.permute_null();
-                null.sort();
-                null.nodf(false, false, false).nodf
-            })
+            .map(|_| self.permute_null().nodf(true, false, false).nodf)
             .filter(|v| !v.is_nan())
             .collect();
 
@@ -1317,20 +1312,9 @@ impl InteractionMatrix {
 
     /// Compute Barber's matrix (modularity-related).
     ///
-    /// # Returns
-    /// * `Ok` with Barber's matrix (2D array).
-    /// * `Err` if the shape is incorrect for calculation.
-    pub fn barbers_matrix(
-        &self,
-    ) -> Result<ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>, BarbersMatrixError> {
-        // compute row sums and turn into 2d array with 1 column
-        let row_sums = &self
-            .row_sums()
-            .into_shape_with_order((self.rownames.len(), 1))?;
-        // col sums remain as a 1d array.
-        let col_sums = &self.col_sums();
-
-        Ok(&self.inner - ((row_sums * col_sums) / self.sum_matrix()))
+    /// Compute Barber's modularity matrix for this interaction matrix.
+    pub fn barbers_matrix(&self) -> Array2<f64> {
+        modularity::barbers_matrix(&self.inner)
     }
 }
 
@@ -1372,7 +1356,7 @@ mod tests {
         #[test]
         fn test_empty_matrix() {
             let data = Array2::<f64>::zeros((0, 0));
-            let mut matrix = InteractionMatrix {
+            let matrix = InteractionMatrix {
                 inner: data,
                 rownames: vec![],
                 colnames: vec![],
@@ -1387,7 +1371,7 @@ mod tests {
         #[test]
         fn test_all_zero_matrix() {
             let data = Array2::<f64>::zeros((3, 3));
-            let mut matrix = InteractionMatrix {
+            let matrix = InteractionMatrix {
                 inner: data,
                 rownames: vec!["A".into(), "B".into(), "C".into()],
                 colnames: vec!["X".into(), "Y".into(), "Z".into()],
@@ -1408,7 +1392,7 @@ mod tests {
                 [1.0, 0.0, 0.0, 0.0] // Poorest row
             ];
 
-            let mut matrix = InteractionMatrix {
+            let matrix = InteractionMatrix {
                 inner: data,
                 rownames: vec!["A".into(), "B".into(), "C".into(), "D".into()],
                 colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
@@ -1433,7 +1417,7 @@ mod tests {
                 [0.0, 0.0, 0.0, 1.0]
             ];
 
-            let mut matrix = InteractionMatrix {
+            let matrix = InteractionMatrix {
                 inner: data,
                 rownames: vec!["A".into(), "B".into(), "C".into(), "D".into()],
                 colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
@@ -1454,7 +1438,7 @@ mod tests {
                 [1.0, 1.0, 1.0, 0.0], // Should be second after sorting
             ];
 
-            let mut matrix = InteractionMatrix {
+            let matrix = InteractionMatrix {
                 inner: data,
                 rownames: vec!["D".into(), "B".into(), "C".into(), "A".into()],
                 colnames: vec!["W".into(), "X".into(), "Y".into(), "Z".into()],
@@ -1511,7 +1495,7 @@ mod tests {
                 [0.0, 0.0, 1.0, 0.0, 1.0]
             ];
 
-            let mut matrix = InteractionMatrix {
+            let matrix = InteractionMatrix {
                 inner: data,
                 rownames: vec!["1".into(), "2".into(), "3".into(), "4".into(), "5".into()],
                 colnames: vec!["1".into(), "2".into(), "3".into(), "4".into(), "5".into()],
@@ -1617,7 +1601,7 @@ mod tests {
             // would reach `for i in 0..(1usize - 1)` safely (that's 0..0),
             // but a 0×N matrix would underflow. The || guard handles both.
             let data = array![[1.0, 0.0, 1.0]];
-            let mut matrix = InteractionMatrix {
+            let matrix = InteractionMatrix {
                 inner: data,
                 rownames: vec!["A".into()],
                 colnames: vec!["X".into(), "Y".into(), "Z".into()],
@@ -1629,7 +1613,7 @@ mod tests {
         #[test]
         fn test_nodf_single_col_no_panic() {
             let data = array![[1.0], [0.0], [1.0]];
-            let mut matrix = InteractionMatrix {
+            let matrix = InteractionMatrix {
                 inner: data,
                 rownames: vec!["A".into(), "B".into(), "C".into()],
                 colnames: vec!["X".into()],
