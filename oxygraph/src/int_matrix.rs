@@ -12,6 +12,8 @@ use crate::MARGIN_LR;
 use calm_io::*;
 use itertools::Itertools;
 use ndarray::{Array2, ArrayBase, Axis, Dim, OwnedRepr};
+use rand::seq::SliceRandom;
+use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io::Write;
@@ -103,6 +105,23 @@ pub struct InteractionMatrixStats {
     pub no_poss_ints: usize,
     /// Percentage of possible interactions seen.
     pub perc_ints: f64,
+    /// Mean number of realized interactions per species (rows + cols).
+    pub link_density: f64,
+}
+
+/// Result of a permutation significance test on a network metric.
+#[derive(Debug, Clone)]
+pub struct PermutationTestResult {
+    /// Observed value of the metric.
+    pub observed: f64,
+    /// Mean of the null distribution.
+    pub mean_null: f64,
+    /// Standard deviation of the null distribution.
+    pub sd_null: f64,
+    /// P-value: proportion of null values >= observed.
+    pub p_value: f64,
+    /// Number of valid (non-NaN) permutations used.
+    pub n_permutations: usize,
 }
 
 impl InteractionMatrix {
@@ -159,7 +178,9 @@ impl InteractionMatrix {
         // change matrix to binary matrix
         let bin_mat = self.inner.map(|e| if *e > 0.0 { 1.0 } else { 0.0 });
 
-        let perc_ints = bin_mat.sum() / no_poss_ints as f64;
+        let realized = bin_mat.sum();
+        let perc_ints = realized / no_poss_ints as f64;
+        let link_density = realized / (no_rows + no_cols) as f64;
 
         InteractionMatrixStats {
             weighted,
@@ -167,6 +188,7 @@ impl InteractionMatrix {
             no_cols,
             no_poss_ints,
             perc_ints,
+            link_density,
         }
     }
 
@@ -1220,6 +1242,79 @@ impl InteractionMatrix {
         self.inner.sum_axis(Axis(0))
     }
 
+    /// Mean number of realized interactions per species (rows + cols combined).
+    pub fn link_density(&self) -> f64 {
+        let realized = self.inner.iter().filter(|&&v| v > 0.0).count();
+        realized as f64 / (self.rownames.len() + self.colnames.len()) as f64
+    }
+
+    /// Mean d' specialisation across all species in a partition.
+    ///
+    /// Skips species with undefined d' (zero interactions). Returns `NaN` if
+    /// no species have a defined d'.
+    pub fn mean_d_prime(&self, partition: Partition) -> f64 {
+        let values: Vec<f64> = self
+            .d_prime(partition, None)
+            .into_iter()
+            .filter_map(|(_, v)| v)
+            .collect();
+        if values.is_empty() {
+            return f64::NAN;
+        }
+        values.iter().sum::<f64>() / values.len() as f64
+    }
+
+    /// Generate a null matrix by randomly shuffling all elements (r00 null model).
+    ///
+    /// Preserves matrix shape and labels; randomises placement of all values.
+    pub fn permute_null(&self) -> Self {
+        let mut values: Vec<f64> = self.inner.iter().copied().collect();
+        values.shuffle(&mut rand::thread_rng());
+        let new_inner = Array2::from_shape_vec(self.inner.dim(), values).unwrap();
+        InteractionMatrix {
+            inner: new_inner,
+            rownames: self.rownames.clone(),
+            colnames: self.colnames.clone(),
+        }
+    }
+
+    /// Permutation significance test for NODF using the r00 null model.
+    ///
+    /// Shuffles matrix elements `n` times and computes NODF on each null matrix.
+    /// P-value is the proportion of null NODF values ≥ the observed NODF.
+    pub fn nodf_permutation_test(&self, n: usize) -> PermutationTestResult {
+        let mut obs = self.clone();
+        obs.sort();
+        let observed = obs.nodf(false, false, false).nodf;
+
+        let null_scores: Vec<f64> = (0..n)
+            .into_par_iter()
+            .map(|_| {
+                let mut null = self.permute_null();
+                null.sort();
+                null.nodf(false, false, false).nodf
+            })
+            .filter(|v| !v.is_nan())
+            .collect();
+
+        permutation_stats(observed, &null_scores)
+    }
+
+    /// Permutation significance test for H2' using the r00 null model.
+    ///
+    /// P-value is the proportion of null H2' values ≥ the observed H2'.
+    pub fn h2_permutation_test(&self, n: usize) -> PermutationTestResult {
+        let observed = self.h2_prime();
+
+        let null_scores: Vec<f64> = (0..n)
+            .into_par_iter()
+            .map(|_| self.permute_null().h2_prime())
+            .filter(|v| !v.is_nan())
+            .collect();
+
+        permutation_stats(observed, &null_scores)
+    }
+
     /// Compute Barber's matrix (modularity-related).
     ///
     /// # Returns
@@ -1236,6 +1331,25 @@ impl InteractionMatrix {
         let col_sums = &self.col_sums();
 
         Ok(&self.inner - ((row_sums * col_sums) / self.sum_matrix()))
+    }
+}
+
+fn permutation_stats(observed: f64, null_scores: &[f64]) -> PermutationTestResult {
+    let n = null_scores.len() as f64;
+    let mean_null = null_scores.iter().sum::<f64>() / n;
+    let variance = null_scores
+        .iter()
+        .map(|x| (x - mean_null).powi(2))
+        .sum::<f64>()
+        / n;
+    let sd_null = variance.sqrt();
+    let p_value = null_scores.iter().filter(|&&x| x >= observed).count() as f64 / n;
+    PermutationTestResult {
+        observed,
+        mean_null,
+        sd_null,
+        p_value,
+        n_permutations: null_scores.len(),
     }
 }
 

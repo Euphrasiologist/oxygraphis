@@ -3,7 +3,7 @@ use calm_io::*;
 use clap::{arg, crate_version, value_parser, ArgMatches, Command};
 use oxygraph::{
     bipartite, BipartiteGraph, BipartiteStats, DerivedGraphStats, DerivedGraphs, InteractionMatrix,
-    InteractionMatrixStats, LpaWbPlus,
+    InteractionMatrixStats, LpaWbPlus, PermutationTestResult,
 };
 use rayon::prelude::*;
 use std::{io::Write, path::PathBuf};
@@ -79,6 +79,10 @@ pub fn cli() -> Command {
                             arg!(--wbinary "Use weighted-binary NODF (requires --nodf).")
                                 .action(clap::ArgAction::SetTrue)
                                 .requires("nodf")
+                        )
+                        .arg(
+                            arg!(-P --permutations [PERMUTATIONS] "Number of permutations for significance test (use with --nodf or --h2); omit to skip.")
+                                .value_parser(value_parser!(usize))
                         )
                         .arg(
                             arg!(-d --dprime <PARTITION> "Compute d' (d-prime), a species-level specialization index.")
@@ -284,6 +288,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                     let print = *im_matches
                         .get_one::<bool>("print")
                         .expect("defaulted by clap.");
+                    let permutations = im_matches.get_one::<usize>("permutations").copied();
 
                     if im_plot {
                         // change these, especially height might need to
@@ -291,29 +296,48 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         im_mat.sort();
                         im_mat.plot(1600, None);
                     } else if let Some(dp) = d_prime {
-                        if dp == "hosts" {
-                            let dp_hosts = im_mat.d_prime(bipartite::Partition::Hosts, None);
-                            for (host, d_prime) in dp_hosts {
-                                let d_prime_fmt =
-                                    d_prime.map(|e| e.to_string()).unwrap_or("None".into());
-                                stdoutln!("{}\t{}", host, d_prime_fmt)?;
-                            }
+                        let partition = if dp == "hosts" {
+                            bipartite::Partition::Hosts
                         } else {
-                            let dp_parasites =
-                                im_mat.d_prime(bipartite::Partition::Parasites, None);
-                            for (parasite, d_prime) in dp_parasites {
-                                let d_prime_fmt =
-                                    d_prime.map(|e| e.to_string()).unwrap_or("None".into());
-                                stdoutln!("{}\t{}", parasite, d_prime_fmt)?;
-                            }
+                            bipartite::Partition::Parasites
                         };
+                        let dprimes = im_mat.d_prime(partition, None);
+                        for (spp, d_prime) in &dprimes {
+                            let d_prime_fmt =
+                                d_prime.map(|e| e.to_string()).unwrap_or("None".into());
+                            stdoutln!("{}\t{}", spp, d_prime_fmt)?;
+                        }
+                        let mean = im_mat.mean_d_prime(partition);
+                        stdoutln!("mean_d'\t{}", mean)?;
                     } else if h2 {
                         let h2 = im_mat.h2_prime();
-                        stdoutln!("H2 Prime\n{}", h2)?;
+                        stdoutln!("H2'\t{}", h2)?;
+                        if let Some(n) = permutations {
+                            let PermutationTestResult {
+                                observed,
+                                mean_null,
+                                sd_null,
+                                p_value,
+                                n_permutations,
+                            } = im_mat.h2_permutation_test(n);
+                            stdoutln!("obs\tmean_null\tsd_null\tp_value\tn_perms")?;
+                            stdoutln!("{}\t{}\t{}\t{}\t{}", observed, mean_null, sd_null, p_value, n_permutations)?;
+                        }
                     } else if nodf {
                         im_mat.sort();
-                        let nodf = im_mat.nodf(true, weighted, wbinary);
-                        stdoutln!("NODF\n{}", nodf.nodf)?;
+                        let nodf_result = im_mat.nodf(false, weighted, wbinary);
+                        stdoutln!("NODF\t{}", nodf_result.nodf)?;
+                        if let Some(n) = permutations {
+                            let PermutationTestResult {
+                                observed,
+                                mean_null,
+                                sd_null,
+                                p_value,
+                                n_permutations,
+                            } = im_mat.nodf_permutation_test(n);
+                            stdoutln!("obs\tmean_null\tsd_null\tp_value\tn_perms")?;
+                            stdoutln!("{}\t{}\t{}\t{}\t{}", observed, mean_null, sd_null, p_value, n_permutations)?;
+                        }
                     } else if print {
                         stdoutln!("{}", im_mat)?;
                     } else {
@@ -324,15 +348,17 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             no_cols,
                             no_poss_ints,
                             perc_ints,
+                            link_density,
                         } = im_mat.stats();
-                        stdoutln!("weighted\t#_rows\t#_cols\t#_poss_ints\tperc_ints")?;
+                        stdoutln!("weighted\t#_rows\t#_cols\t#_poss_ints\tperc_ints\tlink_density")?;
                         stdoutln!(
-                            "{}\t{}\t{}\t{}\t{}",
+                            "{}\t{}\t{}\t{}\t{}\t{}",
                             weighted,
                             no_rows,
                             no_cols,
                             no_poss_ints,
-                            perc_ints * 100.0
+                            perc_ints * 100.0,
+                            link_density
                         )?;
                     }
                 }

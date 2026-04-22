@@ -62,6 +62,7 @@ pub use bipartite::BipartiteStats;
 pub mod int_matrix;
 pub use int_matrix::InteractionMatrix;
 pub use int_matrix::InteractionMatrixStats;
+pub use int_matrix::PermutationTestResult;
 
 /// The derived graphs of a bipartite graph.
 ///
