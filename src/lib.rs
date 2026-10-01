@@ -3,7 +3,7 @@ use calm_io::*;
 use clap::{arg, crate_version, value_parser, ArgMatches, Command};
 use oxygraph::{
     bipartite, BipartiteGraph, BipartiteStats, DerivedGraphStats, DerivedGraphs, InteractionMatrix,
-    InteractionMatrixStats, LpaWbPlus, PermutationTestResult,
+    InteractionMatrixStats, LpaWbPlus, NullModel, PermutationTestResult,
 };
 use rayon::prelude::*;
 use std::{io::Write, path::PathBuf};
@@ -17,160 +17,320 @@ pub fn cli() -> Command {
         .arg_required_else_help(true)
         .version(crate_version!())
         .author("Max Brown <max.carter-brown@aru.ac.uk>")
+        .about("Analyse bipartite ecological networks. Compute nestedness, specialisation, modularity, and derived graphs from a delimited edge list.")
         .subcommand(
             Command::new("bipartite")
-                .about("Generate and analyse bipartite graphs.")
+                .about("Load and analyse a bipartite graph from a delimited edge list.")
+                .long_about(
+                    "Load a bipartite graph from a tab-separated (or custom-delimited) edge list \
+                    with columns `from`, `to`, and `weight`. The graph must be strictly bipartite: \
+                    all edges go from one stratum (e.g. parasites) to the other (e.g. hosts). \
+                    Use subcommands to analyse the graph as an interaction matrix, derived graphs, \
+                    or to compute modularity. Flags on this command return graph-level summaries \
+                    (degrees, degree distributions, plots) without requiring a subcommand."
+                )
                 .arg_required_else_help(true)
-                // generic parameters
                 .arg(
-                    arg!(<INPUT_DSV> "An input DSV with three headers only: from, to, and weight.")
-                        // File always required
+                    arg!(<INPUT_DSV> "Path to a delimited file with columns: from, to, weight. \
+                        Rows represent edges. The `from` column is treated as the parasite/row stratum \
+                        and `to` as the host/column stratum. Weights must be numeric (integer or float).")
                         .required(true)
-                        // and we expect it to be a PathBuf
                         .value_parser(value_parser!(PathBuf)),
                 )
                 .arg(
-                    arg!(-d --delimiter [DELIMITER] "Specify the delimiter of the DSV; we assume tabs.")
+                    arg!(-d --delimiter [DELIMITER] "Column delimiter character. Defaults to tab (\\t). \
+                        Pass a single character, e.g. -d ',' for CSV.")
                         .required(false),
                 )
                 .arg(
-                    arg!(-p --plotbp "Render an SVG bipartite graph plot.")
+                    arg!(-p --plotbp "Render an SVG bipartite graph and print to stdout. \
+                        Nodes are scaled uniformly. Pipe to a file: oxygraphis bipartite input.tsv --plotbp > out.svg")
                         .conflicts_with("plotbp2")
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(
-                    arg!(-q --plotbp2 "Render an SVG bipartite graph plot with proportional node size.")
+                    arg!(-q --plotbp2 "Render an SVG bipartite graph with node size proportional to degree. \
+                        Useful for visualising hub species. Pipe to a file.")
                         .conflicts_with("plotbp")
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(
-                    arg!(--degrees "Return the degrees of a bipartite graph.")
+                    arg!(--degrees "Print the degree of every node (number of interaction partners). \
+                        Output columns: spp, stratum, value.")
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(
-                    arg!(-e --degreedistribution "Return the degree distribution of a bipartite graph.")
+                    arg!(-e --degreedistribution "Print the degree distribution for each stratum as a frequency table. \
+                        Output columns: stratum, degree, count.")
                         .action(clap::ArgAction::SetTrue)
                 )
                 .arg(
-                    arg!(-b --bivariatedistribution  "Return the bivariate degree distribution of a bipartite graph.")
+                    arg!(-b --bivariatedistribution "Print the bivariate degree distribution: the joint frequency of \
+                        (parasite degree, host degree) across all edges. Useful for detecting degree-degree correlations.")
                         .action(clap::ArgAction::SetTrue)
                 )
                 .subcommand(
                     Command::new("interaction-matrix")
-                        .about("Coerce a bipartite graph into an interaction matrix.")
+                        .about("Coerce the bipartite graph into an interaction matrix and compute network metrics.")
+                        .long_about(
+                            "Builds an n×m interaction matrix (parasites × hosts) from the edge list, \
+                            then computes one or more metrics. With no metric flags, prints summary \
+                            statistics: whether weights are present, matrix dimensions, percentage fill, \
+                            and link density. Metric flags can be combined freely."
+                        )
                         .arg(
-                            arg!(--print "Print the inner matrix as a TSV. Mainly for debugging.")
+                            arg!(--print "Print the raw interaction matrix as a TSV to stdout. \
+                                Rows are parasites, columns are hosts. Useful for debugging or passing \
+                                to downstream tools.")
                                 .action(clap::ArgAction::SetTrue)
                         )
                         .arg(
-                            arg!(-p --plotim "Render an SVG interaction matrix plot.")
+                            arg!(-p --plotim "Render an SVG heatmap of the interaction matrix and print to stdout. \
+                                Cell colour intensity is proportional to edge weight.")
                                 .action(clap::ArgAction::SetTrue)
                         )
                         .arg(
-                            arg!(-n --nodf "Compute the NODF number of a *sorted* interaction matrix.")
+                            arg!(-n --nodf "Compute NODF (Nestedness metric based on Overlap and Decreasing Fill). \
+                                The matrix is sorted by decreasing marginal totals before calculation. \
+                                Outputs the NODF score (0–100, higher = more nested). \
+                                Use --weighted or --wbinary for weighted variants. \
+                                Use --permutations N to test significance against a null model.")
                                 .action(clap::ArgAction::SetTrue)
                         )
                         .arg(
-                            arg!(-w --weighted "Use weighted NODF (requires --nodf).")
+                            arg!(-w --weighted "Compute weighted NODF instead of binary NODF. \
+                                Interactions are compared by weight rather than presence/absence. \
+                                Requires --nodf.")
                                 .action(clap::ArgAction::SetTrue)
                                 .requires("nodf")
                         )
                         .arg(
-                            arg!(--wbinary "Use weighted-binary NODF (requires --nodf).")
+                            arg!(--wbinary "Compute weighted-binary NODF: applies a binary filter \
+                                to the weighted matrix before computing nestedness. Requires --nodf.")
                                 .action(clap::ArgAction::SetTrue)
                                 .requires("nodf")
                         )
                         .arg(
-                            arg!(-P --permutations [PERMUTATIONS] "Number of permutations for significance test (use with --nodf or --h2); omit to skip.")
+                            arg!(-P --permutations [PERMUTATIONS] "Run a null-model significance test with N null \
+                                matrices (see --null). Applies to --nodf, --h2 and --dprime. Outputs the observed \
+                                value, null mean, null SD, standardised effect size z, one-tailed P = (k + 1)/(N + 1), \
+                                N and the null model. For --dprime, outputs per-species null means and 95% intervals.")
                                 .value_parser(value_parser!(usize))
                         )
                         .arg(
-                            arg!(-d --dprime <PARTITION> "Compute d' (d-prime), a species-level specialization index.")
+                            arg!(--null [NULL] "Null model for --permutations. r00: shuffle all cells \
+                                (fixed fill only). patefield: random integer matrices with the observed \
+                                row and column totals (as R's r2dtable); use for H2', d' and weighted metrics. \
+                                curveball: random binary matrices with the observed row and column degrees \
+                                (Strona et al. 2014); use for NODF. [default: r00]")
+                                .value_parser(["r00", "patefield", "curveball"])
+                                .default_value("r00")
+                        )
+                        .arg(
+                            arg!(--seed [SEED] "Random seed for the null matrices, for reproducible results. \
+                                Null matrix i uses seed + i.")
+                                .value_parser(value_parser!(u64))
+                        )
+                        .arg(
+                            arg!(--trades [TRADES] "Curveball trades per null matrix. Each null matrix starts \
+                                from the observed matrix. [default: max(1000, 50 x number of rows)]")
+                                .value_parser(value_parser!(usize))
+                        )
+                        .arg(
+                            arg!(-d --dprime <PARTITION> "Compute d' (d-prime) for each species in the chosen stratum. \
+                                d' measures how much a species deviates from using partners in proportion \
+                                to their overall availability (marginal frequencies). \
+                                0 = complete generalist (uses partners proportional to abundance); \
+                                1 = complete specialist (uses only a subset regardless of availability). \
+                                Also prints the mean d' across the stratum. \
+                                Choose 'parasites' for row species or 'hosts' for column species.")
                                 .value_parser(clap::builder::PossibleValuesParser::new(["parasites", "hosts"]))
                         )
                         .arg(
-                            arg!(--h2 "Compute H2', a network-level specialization metric.")
+                            arg!(--h2 "Compute H2' (H2-prime), a network-level specialisation index. \
+                                H2' measures how much the whole network deviates from random partner use, \
+                                scaled between the most generalised (H2'=0) and most specialised (H2'=1) \
+                                network possible given the observed marginal totals. \
+                                Works with both integer and continuous weights. \
+                                Use --permutations N to test significance against a null model.")
                                 .action(clap::ArgAction::SetTrue)
                         )
                 )
                 .subcommand(Command::new("derived-graphs")
-                    .about("Coerce a bipartite graph into two derived graphs.")
+                    .about("Project the bipartite graph into unipartite derived graphs for each stratum.")
+                    .long_about(
+                        "Constructs two unipartite derived graphs: one connecting parasites that \
+                        share hosts, and one connecting hosts that share parasites. Edge weights \
+                        are the number of shared partners. Without flags, prints summary statistics \
+                        (node and edge counts before and after filtering). Use --overlap to get \
+                        pairwise Jaccard similarity between parasite species based on shared hosts, \
+                        or --plotdg to visualise one stratum's derived graph."
+                    )
                     .arg(
-                        arg!(-p --plotdg "Render an SVG derived graph of a stratum.")
+                        arg!(-p --plotdg "Render an SVG of the derived graph for the chosen stratum and print to stdout. \
+                            Requires --stratum. Node size is proportional to degree in the derived graph.")
                             .action(clap::ArgAction::SetTrue)
                             .requires("stratum")
                     )
                     .arg(
-                        arg!(-s --stratum [STRATUM] "The stratum to display.")
+                        arg!(-s --stratum [STRATUM] "Which stratum's derived graph to plot or summarise. \
+                            'host': connect hosts that share parasites. \
+                            'parasite': connect parasites that share hosts. [default: host]")
                             .num_args(1)
                             .default_value("host")
                             .value_parser(["host", "parasite"])
                     )
                     .arg(
-                        arg!(-r --remove [REMOVE] "Edges with fewer than this number of connections are removed from the graph.")
+                        arg!(-r --remove [REMOVE] "Remove edges from the derived graph with weight below this threshold \
+                            before plotting or summarising. Higher values retain only strongly overlapping pairs. \
+                            [default: 2.0]")
                             .default_value("2.0")
                             .value_parser(value_parser!(f64))
                     )
                     .arg(
-                        arg!(-d --diameter [DIAMETER] "The diameter (width and height; plot is square) of the plot.")
+                        arg!(-d --diameter [DIAMETER] "Width and height of the SVG plot in pixels (plot is square). \
+                            [default: 600.0]")
                             .default_value("600.0")
                             .value_parser(value_parser!(f64))
-
+                    )
+                    .arg(
+                        arg!(-v --overlap "Print pairwise Jaccard host-overlap between all parasite species. \
+                            Jaccard = shared_hosts / union_hosts. Output columns: sp1, sp2, jaccard. \
+                            Sorted by descending Jaccard (most similar pairs first).")
+                            .action(clap::ArgAction::SetTrue)
                     )
                 )
                 .subcommand(Command::new("modularity")
-                    .about("Derive the modularity of a bipartite graph.")
+                    .about("Compute the modularity of the bipartite network.")
+                    .long_about(
+                        "Detects modules (groups of parasites and hosts that interact more with each \
+                        other than with the rest of the network) using label-propagation algorithms \
+                        optimised for bipartite graphs. Modularity Q ranges from 0 (no modular \
+                        structure) to 1 (perfectly modular). Use --plotmod to also write module \
+                        assignments and the sorted interaction matrix to files."
+                    )
                     .arg(
-                        arg!(-l --lpawbplus "Compute the modularity of a bipartite network using LPAwb+ algorithm.")
+                        arg!(-l --lpawbplus "Compute modularity using LPAwb+, the standard weighted \
+                            bipartite label-propagation algorithm (Beckett 2016). Faster but less \
+                            thorough than DIRTLPAwb+. Mutually exclusive with --dirtlpawbplus.")
                             .action(clap::ArgAction::SetTrue)
                             .conflicts_with("dirtlpawbplus")
                     )
                     .arg(
-                        arg!(-d --dirtlpawbplus "Compute the modularity of a bipartite network using DIRTLPAwb+ algorithm.")
+                        arg!(-d --dirtlpawbplus "Compute modularity using DIRTLPAwb+ (Beckett 2016), \
+                            which reruns LPAwb+ from multiple starting conditions to escape local optima. \
+                            Recommended for publication-quality results. Slower than --lpawbplus. \
+                            Mutually exclusive with --lpawbplus.")
                             .action(clap::ArgAction::SetTrue)
                             .conflicts_with("lpawbplus")
                     )
                     .arg(
-                        arg!(-p --plotmod "Plot the interaction matrix of a bipartite network, sorted to maximise modularity.")
+                        arg!(-P --permutations [PERMUTATIONS] "Test Q against N null matrices (see --null), \
+                            running the chosen algorithm on each. Outputs the observed Q, null mean, null SD, \
+                            z, one-tailed P = (k + 1)/(N + 1), N and the null model.")
+                            .value_parser(value_parser!(usize))
+                    )
+                        .arg(
+                        arg!(--null [NULL] "Null model for --permutations. r00: shuffle all cells \
+                            (fixed fill only). patefield: random integer matrices with the observed \
+                            row and column totals (as R's r2dtable); use for H2', d' and weighted metrics. \
+                            curveball: random binary matrices with the observed row and column degrees \
+                            (Strona et al. 2014); use for NODF. [default: patefield]")
+                            .value_parser(["r00", "patefield", "curveball"])
+                            .default_value("patefield")
+                    )
+                    .arg(
+                        arg!(--seed [SEED] "Random seed for the null matrices, for reproducible results. \
+                            Null matrix i uses seed + i.")
+                            .value_parser(value_parser!(u64))
+                    )
+                    .arg(
+                        arg!(--trades [TRADES] "Curveball trades per null matrix. Each null matrix starts \
+                            from the observed matrix. [default: max(1000, 50 x number of rows)]")
+                            .value_parser(value_parser!(usize))
+                    )
+                    .arg(
+                        arg!(--mini [MINI] "DIRTLPAwb+ only: minimum number of modules from which to restart \
+                            label propagation (Beckett 2016). [default: 4]")
+                            .value_parser(value_parser!(u32))
+                            .default_value("4")
+                    )
+                    .arg(
+                        arg!(--reps [REPS] "DIRTLPAwb+ only: number of LPAwb+ restarts per module number, \
+                            run in parallel (Beckett 2016). [default: 10]")
+                            .value_parser(value_parser!(u32))
+                            .default_value("10")
+                    )
+                    .arg(
+                        arg!(-p --plotmod "In addition to the Q value, write two files to the output directory: \
+                            (1) an SVG interaction matrix sorted by module membership, and \
+                            (2) a TSV listing each (module, parasite, host) assignment. \
+                            Requires --lpawbplus or --dirtlpawbplus.")
                             .action(clap::ArgAction::SetTrue)
                     )
-                    // a directory where the lting modularity files are saved.
                     .arg(
-                        arg!(-o --output [OUTPUT] "Output directory for the modularity files.")
+                        arg!(-o --output [OUTPUT] "Directory to write module output files when --plotmod is used. \
+                            Files are named '<algorithm>_interaction_matrix.tsv' and '<algorithm>_modules.tsv'. \
+                            [default: current directory]")
                             .value_parser(value_parser!(PathBuf))
                             .default_value(".")
                     )
                 )
             )
             .subcommand(Command::new("simulate")
-                .about("Simulate a number of graphs, and return calculations over the samples.")
+                .about("Simulate random Erdős–Rényi bipartite graphs and compute metrics over the ensemble.")
+                .long_about(
+                    "Generates N random bipartite graphs with the specified number of parasite nodes, \
+                    host nodes, and edges, then runs a chosen calculation on each. Useful for building \
+                    null distributions and understanding expected metric values under random wiring."
+                )
                 .arg(
-                    arg!(--parasitenumber <PARASITENUMBER> "Number of parasite nodes in the graph.")
+                    arg!(--parasitenumber <PARASITENUMBER> "Number of parasite (row) nodes in each simulated graph.")
                         .required(true)
                         .value_parser(value_parser!(usize))
                 )
                 .arg(
-                    arg!(--hostnumber <HOSTNUMBER> "Number of host nodes in the graph.")
+                    arg!(--hostnumber <HOSTNUMBER> "Number of host (column) nodes in each simulated graph.")
                         .required(true)
                         .value_parser(value_parser!(usize))
                 )
                 .arg(
-                    arg!(-e --edgecount <EDGECOUNT> "Number of edges in the graph.")
+                    arg!(-e --edgecount <EDGECOUNT> "Number of edges to place in each simulated graph. \
+                        Must be ≤ parasitenumber × hostnumber.")
                         .required(true)
                         .value_parser(value_parser!(usize))
                 )
                 .arg(
-                    arg!(-n --nsims [NSIMS] "Number of random samples to make.")
+                    arg!(-n --nsims [NSIMS] "Number of random graphs to generate. \
+                        The chosen calculation is run on each. [default: 1000]")
                         .value_parser(value_parser!(i32))
                         .default_value("1000")
                 )
                 .arg(
-                    arg!(-c --calculation [CALCULATION] "The calculation to make.")
+                    arg!(-c --calculation [CALCULATION] "Metric to compute on each simulated graph. \
+                        nodf: binary NODF nestedness score. \
+                        lpawbplus: modularity Q via LPAwb+. \
+                        dirtlpawbplus: modularity Q via DIRTLPAwb+. \
+                        degree-distribution: degree distribution for each stratum. \
+                        bivariate-distribution: joint (parasite degree, host degree) distribution. \
+                        [default: nodf]")
                         .default_value("nodf")
                         .value_parser(["nodf", "lpawbplus", "dirtlpawbplus", "degree-distribution", "bivariate-distribution"])
                 )
                 .arg(
-                    arg!(--plot "Plot the simulated bipartite network.")
+                    arg!(--mini [MINI] "DIRTLPAwb+ only: minimum number of modules from which to restart \
+                        label propagation (Beckett 2016). [default: 4]")
+                        .value_parser(value_parser!(u32))
+                        .default_value("4")
+                    )
+                .arg(
+                    arg!(--reps [REPS] "DIRTLPAwb+ only: number of LPAwb+ restarts per module number, \
+                        run in parallel (Beckett 2016). [default: 10]")
+                        .value_parser(value_parser!(u32))
+                        .default_value("10")
+                    )
+                .arg(
+                    arg!(--plot "Render an SVG of the first simulated bipartite graph and print to stdout.")
                         .action(clap::ArgAction::SetTrue)
                 )
             )
@@ -301,6 +461,21 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         } else {
                             bipartite::Partition::Parasites
                         };
+                        if let Some(n) = permutations {
+                            let (model, seed, trades) = null_settings(im_matches, im_mat.inner.nrows())?;
+                            let res = im_mat
+                                .dprime_null_test(partition, n, model, trades, seed)
+                                .map_err(|e| Error::msg(format!("{}", e)))?;
+                            stdoutln!("species\tdprime\tmean_null\tlower_null\tupper_null\tp_value\tn_perms\tnull_model")?;
+                            for r in res {
+                                let obs = r.observed.map(|e| e.to_string()).unwrap_or("None".into());
+                                stdoutln!(
+                                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                                    r.species, obs, r.mean_null, r.lower_null, r.upper_null, r.p_value, n, model
+                                )?;
+                            }
+                            return Ok(());
+                        }
                         let dprimes = im_mat.d_prime(partition, None);
                         for (spp, d_prime) in &dprimes {
                             let d_prime_fmt =
@@ -313,29 +488,21 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         let h2 = im_mat.h2_prime();
                         stdoutln!("H2'\t{}", h2)?;
                         if let Some(n) = permutations {
-                            let PermutationTestResult {
-                                observed,
-                                mean_null,
-                                sd_null,
-                                p_value,
-                                n_permutations,
-                            } = im_mat.h2_permutation_test(n);
-                            stdoutln!("obs\tmean_null\tsd_null\tp_value\tn_perms")?;
-                            stdoutln!("{}\t{}\t{}\t{}\t{}", observed, mean_null, sd_null, p_value, n_permutations)?;
+                            let (model, seed, trades) = null_settings(im_matches, im_mat.inner.nrows())?;
+                            let r = im_mat
+                                .null_test(n, model, trades, seed, |m| m.h2_prime())
+                                .map_err(|e| Error::msg(format!("{}", e)))?;
+                            print_null_test(&r)?;
                         }
                     } else if nodf {
                         let nodf_result = im_mat.nodf(true, weighted, wbinary);
                         stdoutln!("NODF\t{}", nodf_result.nodf)?;
                         if let Some(n) = permutations {
-                            let PermutationTestResult {
-                                observed,
-                                mean_null,
-                                sd_null,
-                                p_value,
-                                n_permutations,
-                            } = im_mat.nodf_permutation_test(n);
-                            stdoutln!("obs\tmean_null\tsd_null\tp_value\tn_perms")?;
-                            stdoutln!("{}\t{}\t{}\t{}\t{}", observed, mean_null, sd_null, p_value, n_permutations)?;
+                            let (model, seed, trades) = null_settings(im_matches, im_mat.inner.nrows())?;
+                            let r = im_mat
+                                .null_test(n, model, trades, seed, |m| m.nodf(true, weighted, wbinary).nodf)
+                                .map_err(|e| Error::msg(format!("{}", e)))?;
+                            print_null_test(&r)?;
                         }
                     } else if print {
                         stdoutln!("{}", im_mat)?;
@@ -378,6 +545,10 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         .get_one::<f64>("diameter")
                         .expect("defaulted by clap.");
 
+                    let overlap = *dg_matches
+                        .get_one::<bool>("overlap")
+                        .expect("defaulted by clap.");
+
                     if dg_plot {
                         let svg = match stratum.as_str() {
                             "host" => dgs.hosts.plot(diameter, remove),
@@ -385,6 +556,13 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             _ => unreachable!("Should never reach here."),
                         };
                         stdoutln!("{}", svg)?;
+                    } else if overlap {
+                        stdoutln!("sp1\tsp2\tjaccard")?;
+                        let mut pairs = dgs.parasites.overlap_measure();
+                        pairs.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+                        for (sp1, sp2, j) in pairs {
+                            stdoutln!("{}\t{}\t{}", sp1, sp2, j)?;
+                        }
                     } else {
                         let DerivedGraphStats {
                             parasite_nodes,
@@ -421,6 +599,10 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         .get_one::<PathBuf>("output")
                         .expect("defaulted by clap.");
 
+                    let mod_seed = mod_matches.get_one::<u64>("seed").copied();
+                    let mini = *mod_matches.get_one::<u32>("mini").expect("defaulted by clap.");
+                    let reps = *mod_matches.get_one::<u32>("reps").expect("defaulted by clap.");
+
                     // create the interaction matrix
                     let int_mat = InteractionMatrix::from_bipartite(bpgraph);
 
@@ -428,10 +610,16 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         let kind: &str;
                         let mut modularity_obj = if dirtlpawbplus {
                             kind = "DIRTLPAwb+";
-                            int_mat.clone().dirt_lpa_wb_plus(2, 2)
+                            match mod_seed {
+                                Some(sd) => int_mat.dirt_lpa_wb_plus_seeded(mini, reps, sd),
+                                None => int_mat.clone().dirt_lpa_wb_plus(mini, reps),
+                            }
                         } else {
                             kind = "LPAwb+";
-                            int_mat.clone().lpa_wb_plus(None)
+                            match mod_seed {
+                                Some(sd) => int_mat.lpa_wb_plus_seeded(None, sd),
+                                None => int_mat.clone().lpa_wb_plus(None),
+                            }
                         };
                         let modularity = modularity_obj.modularity;
                         let (int_mat, modules) = modularity_obj.plot(int_mat);
@@ -458,12 +646,33 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             }
                         }
                         modules_file.flush()?;
+                    } else if let Some(n) = mod_matches.get_one::<usize>("permutations").copied() {
+                        if !(dirtlpawbplus || lpawbplus) {
+                            return Err(Error::msg("Please specify --lpawbplus or --dirtlpawbplus."));
+                        }
+                        let (model, seed, trades) = null_settings(mod_matches, int_mat.inner.nrows())?;
+                        let r = int_mat
+                            .null_test_seeded(n, model, trades, seed, |m, sd| {
+                                if dirtlpawbplus {
+                                    m.dirt_lpa_wb_plus_seeded(mini, reps, sd).modularity
+                                } else {
+                                    m.lpa_wb_plus_seeded(None, sd).modularity
+                                }
+                            })
+                            .map_err(|e| Error::msg(format!("{}", e)))?;
+                        stdoutln!("{}", if dirtlpawbplus { "DIRTLPAwb+" } else { "LPAwb+" })?;
+                        print_null_test(&r)?;
                     } else if dirtlpawbplus {
-                        // probably let user input reps in future.
-                        let LpaWbPlus { modularity, .. } = int_mat.dirt_lpa_wb_plus(2, 2);
+                        let LpaWbPlus { modularity, .. } = match mod_seed {
+                            Some(sd) => int_mat.dirt_lpa_wb_plus_seeded(mini, reps, sd),
+                            None => int_mat.dirt_lpa_wb_plus(mini, reps),
+                        };
                         stdoutln!("DIRTLPAwb+\n{}", modularity)?;
                     } else if lpawbplus {
-                        let LpaWbPlus { modularity, .. } = int_mat.lpa_wb_plus(None);
+                        let LpaWbPlus { modularity, .. } = match mod_seed {
+                            Some(sd) => int_mat.lpa_wb_plus_seeded(None, sd),
+                            None => int_mat.lpa_wb_plus(None),
+                        };
                         stdoutln!("LPAwb+\n{}", modularity)?;
                     } else {
                         return Err(Error::msg("Please specify --lpawbplus or --dirtlpawbplus."));
@@ -492,6 +701,8 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
             let calculation = sm_matches
                 .get_one::<String>("calculation")
                 .expect("defaulted by clap.");
+            let mini = *sm_matches.get_one::<u32>("mini").expect("defaulted by clap.");
+            let reps = *sm_matches.get_one::<u32>("reps").expect("defaulted by clap.");
 
             if plot {
                 let rand_graph = BipartiteGraph::random(parasite_number, host_number, edge_count)?;
@@ -524,7 +735,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         }
                         "dirtlpawbplus" => {
                             let im_mat = InteractionMatrix::from_bipartite(rand_graph);
-                            let LpaWbPlus { modularity, .. } = im_mat.dirt_lpa_wb_plus(2, 2);
+                            let LpaWbPlus { modularity, .. } = im_mat.dirt_lpa_wb_plus(mini, reps);
                             stdoutln!("{}", modularity)?;
                             Ok::<(), Error>(())
                         }
@@ -543,5 +754,30 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
         _ => unreachable!("Should never reach here."),
     }
 
+    Ok(())
+}
+
+/// Parse the shared null-model arguments.
+fn null_settings(m: &ArgMatches, nrows: usize) -> Result<(NullModel, Option<u64>, usize)> {
+    let model: NullModel = m
+        .get_one::<String>("null")
+        .expect("defaulted by clap.")
+        .parse()
+        .map_err(|e| Error::msg(format!("{}", e)))?;
+    let seed = m.get_one::<u64>("seed").copied();
+    let trades = m
+        .get_one::<usize>("trades")
+        .copied()
+        .unwrap_or_else(|| oxygraph::null::default_trades(nrows));
+    Ok((model, seed, trades))
+}
+
+/// Print a null-model test result as a two-line TSV.
+fn print_null_test(r: &PermutationTestResult) -> Result<()> {
+    stdoutln!("obs\tmean_null\tsd_null\tz\tp_value\tn_perms\tnull_model")?;
+    stdoutln!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        r.observed, r.mean_null, r.sd_null, r.z, r.p_value, r.n_permutations, r.null_model
+    )?;
     Ok(())
 }

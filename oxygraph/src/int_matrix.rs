@@ -12,7 +12,10 @@ use crate::MARGIN_LR;
 use calm_io::*;
 use itertools::Itertools;
 use ndarray::{Array2, ArrayBase, Axis, Dim, OwnedRepr};
+use crate::null::{null_matrix, NullModel, NullModelError};
+use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
+use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -37,6 +40,44 @@ fn entropy(matrix: &Matrix) -> f64 {
             -p * p.ln()
         })
         .sum()
+}
+
+/// First (i, j) in column-major order satisfying `pred`, matching R's `which(...)[1]`.
+fn first_col_major(nr: usize, nc: usize, pred: impl Fn(usize, usize) -> bool) -> Option<(usize, usize)> {
+    for j in 0..nc {
+        for i in 0..nr {
+            if pred(i, j) {
+                return Some((i, j));
+            }
+        }
+    }
+    None
+}
+
+/// Entropy of the minimum-entropy matrix with the given marginal totals, built greedily as in
+/// `bipartite::H2fun`: repeatedly place min(largest remaining row total, largest remaining
+/// column total) at their intersection, taking the first maximum on ties.
+fn h2_min_entropy(row_sums: &[f64], col_sums: &[f64]) -> f64 {
+    let (nr, nc) = (row_sums.len(), col_sums.len());
+    let mut web = Array2::<f64>::zeros((nr, nc));
+    let first_max = |v: &[f64]| {
+        let m = v.iter().cloned().fold(f64::MIN, f64::max);
+        v.iter().position(|&x| x == m).unwrap()
+    };
+    let mut rs_rest = row_sums.to_vec();
+    let mut cs_rest = col_sums.to_vec();
+    let mut guard = 0;
+    while (rs_rest.iter().sum::<f64>() * 1e10).round() != 0.0 && guard < 10 * (nr * nc + 1) {
+        let i = first_max(&rs_rest);
+        let j = first_max(&cs_rest);
+        web[[i, j]] = rs_rest[i].min(cs_rest[j]);
+        let rsn = web.sum_axis(Axis(1));
+        let csn = web.sum_axis(Axis(0));
+        rs_rest = row_sums.iter().zip(rsn.iter()).map(|(a, b)| a - b).collect();
+        cs_rest = col_sums.iter().zip(csn.iter()).map(|(a, b)| a - b).collect();
+        guard += 1;
+    }
+    entropy(&web)
 }
 
 /// Result structure for the Nested NODF calculation, modeled after the `vegan::nestednodf` output.
@@ -104,16 +145,48 @@ pub struct InteractionMatrixStats {
 /// Result of a permutation significance test on a network metric.
 #[derive(Debug, Clone)]
 pub struct PermutationTestResult {
+    /// Null model used.
+    pub null_model: NullModel,
     /// Observed value of the metric.
     pub observed: f64,
     /// Mean of the null distribution.
     pub mean_null: f64,
-    /// Standard deviation of the null distribution.
+    /// Standard deviation of the null distribution (sample SD, n - 1).
     pub sd_null: f64,
-    /// P-value: proportion of null values >= observed.
+    /// Standardised effect size: (observed - mean_null) / sd_null.
+    pub z: f64,
+    /// One-tailed P-value, (k + 1) / (n + 1), where k is the number of null values >= observed.
     pub p_value: f64,
     /// Number of valid (non-NaN) permutations used.
     pub n_permutations: usize,
+}
+
+/// Species-level d' with its null distribution.
+#[derive(Debug, Clone)]
+pub struct DPrimeNullResult {
+    /// Species name.
+    pub species: String,
+    /// Observed d'.
+    pub observed: Option<f64>,
+    /// Mean of null d' values.
+    pub mean_null: f64,
+    /// 2.5% quantile of null d' values.
+    pub lower_null: f64,
+    /// 97.5% quantile of null d' values.
+    pub upper_null: f64,
+    /// One-tailed P-value, (k + 1) / (n + 1).
+    pub p_value: f64,
+}
+
+/// Quantile with linear interpolation (R's default, type 7). `sorted` must be ascending.
+fn quantile7(sorted: &[f64], q: f64) -> f64 {
+    if sorted.is_empty() {
+        return f64::NAN;
+    }
+    let h = (sorted.len() - 1) as f64 * q;
+    let lo = h.floor() as usize;
+    let hi = h.ceil() as usize;
+    sorted[lo] + (h - lo as f64) * (sorted[hi] - sorted[lo])
 }
 
 impl InteractionMatrix {
@@ -256,7 +329,11 @@ impl InteractionMatrix {
     /// assert_eq!(int_matrix.inner[[0, 0]], 1.0);
     /// ```
     pub fn from_bipartite(graph: BipartiteGraph) -> Self {
-        let (parasites, hosts) = graph.get_parasite_host_from_graph();
+        let (mut parasites, mut hosts) = graph.get_parasite_host_from_graph();
+        // Graph node order depends on hash ordering when the edge list is read, so sort by
+        // name to make the matrix, and anything stochastic computed from it, reproducible.
+        parasites.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+        hosts.sort_by(|a, b| a.1.name.cmp(&b.1.name));
 
         // Early return if graph is empty
         if parasites.is_empty() || hosts.is_empty() {
@@ -816,208 +893,162 @@ impl InteractionMatrix {
 
     /// Compute the H2' specialization index for a bipartite interaction matrix.
     ///
-    /// This implementation replicates the integer-aware behavior of the R `bipartite::H2fun` function
-    /// with `H2_integer = TRUE`. It assumes the matrix contains only non-negative integer entries.
+    /// Replicates the R function `bipartite::H2fun`. For matrices of non-negative integers
+    /// it follows `H2_integer = TRUE`; for any non-integer weights it follows
+    /// `H2_integer = FALSE`, where the maximum entropy is that of the expected matrix
+    /// under independence.
     ///
-    /// The method measures network-level specialization based on deviation from maximum entropy
-    /// (uncorrected Shannon entropy of interaction frequencies) and compares this with a maximum
-    /// entropy matrix (subject to integer constraints) and a minimum entropy configuration derived
-    /// by greedily filling the matrix while maintaining row and column marginal totals.
+    /// The method compares the observed (uncorrected) Shannon entropy of interaction
+    /// frequencies with a maximum entropy matrix and a minimum entropy configuration
+    /// derived by greedily filling the matrix while maintaining row and column totals.
     ///
     /// Returned value is:
-    /// ```
+    /// ```text
     /// H2' = (H2_max - H2_uncorr) / (H2_max - H2_min)
     /// ```
     /// where:
     /// - `H2_uncorr` is the observed entropy of the interaction matrix
-    /// - `H2_max` is the entropy of an integer-approximated expected matrix under independence
+    /// - `H2_max` is the entropy of the expected matrix under independence (integer-approximated
+    ///   for integer data)
     /// - `H2_min` is the entropy of a maximally specialized (minimum entropy) matrix
-    ///
-    /// Panics if the matrix contains non-integer values.
     ///
     /// # Returns
     /// `f64` — the H2' value, in the range [0, 1], where 1 indicates maximum specialization.
     ///
     /// # Example
     /// ```rust
-    /// let data = array![
-    ///     [1.0, 0.0, 1.0],
-    ///     [0.0, 2.0, 0.0],
-    ///     [0.0, 1.0, 1.0]
-    /// ];
-    /// let matrix = InteractionMatrix::from(data);
+    /// use ndarray::array;
+    /// use oxygraph::InteractionMatrix;
+    ///
+    /// let matrix = InteractionMatrix {
+    ///     inner: array![[1.0, 0.0, 1.0], [0.0, 2.0, 0.0], [0.0, 1.0, 1.0]],
+    ///     rownames: vec!["a".into(), "b".into(), "c".into()],
+    ///     colnames: vec!["x".into(), "y".into(), "z".into()],
+    /// };
     /// let h2p = matrix.h2_prime();
     /// assert!(h2p >= 0.0 && h2p <= 1.0);
     /// ```
     pub fn h2_prime(&self) -> f64 {
         let matrix = &self.inner;
-
-        if matrix.iter().any(|&v| v.fract() != 0.0) {
-            panic!("Matrix contains non-integer values. Set H2_integer = FALSE to bypass.");
-        }
+        let (nr, nc) = matrix.dim();
+        let is_integer = matrix.iter().all(|&v| v.fract() == 0.0);
 
         let total: f64 = matrix.sum();
+        if total <= 0.0 {
+            return 0.0;
+        }
         let row_sums = matrix.sum_axis(Axis(1));
         let col_sums = matrix.sum_axis(Axis(0));
-
-        // H2uncorr = entropy of original matrix
         let h2_uncorr = entropy(matrix);
 
-        let expected = row_sums.clone()
-    .insert_axis(Axis(1)) // shape (rows, 1)
-    * col_sums.clone().insert_axis(Axis(0)) // shape (1, cols)
-    / total;
+        // Expected matrix under independence (R: `exexpec`).
+        let expected = row_sums.clone().insert_axis(Axis(1))
+            * col_sums.clone().insert_axis(Axis(0))
+            / total;
 
-        // Build integer-aware expected matrix
-        let mut newweb = expected.mapv(f64::floor);
-        let mut difexp = &expected - &newweb;
-        let mut webfull = Array2::<bool>::from_elem(matrix.raw_dim(), false);
+        let h2_max = if !is_integer {
+            // R: H2_integer = FALSE
+            entropy(&expected)
+        } else {
+            // R: H2_integer = TRUE. Fill an integer matrix towards the expected one.
+            let mut newweb = expected.mapv(f64::floor);
+            // On the first pass R compares against an all-zero matrix, so `difexp` starts
+            // as the expected matrix itself; afterwards it is expected - newweb.
+            let mut difexp = expected.clone();
+            let mut webfull = Array2::<bool>::from_elem((nr, nc), false);
 
-        while newweb.sum() < total {
-            // Mark filled rows and columns
-            for (i, sum) in newweb.sum_axis(Axis(1)).iter().enumerate() {
-                if (*sum - row_sums[i]).abs() < 1e-6 {
-                    for j in 0..matrix.ncols() {
-                        webfull[[i, j]] = true;
+            while newweb.sum() < total - 1e-9 {
+                let rsn = newweb.sum_axis(Axis(1));
+                let csn = newweb.sum_axis(Axis(0));
+                for i in 0..nr {
+                    if rsn[i] == row_sums[i] {
+                        webfull.row_mut(i).fill(true);
                     }
                 }
-            }
-            for (j, sum) in newweb.sum_axis(Axis(0)).iter().enumerate() {
-                if (*sum - col_sums[j]).abs() < 1e-6 {
-                    for i in 0..matrix.nrows() {
-                        webfull[[i, j]] = true;
+                for j in 0..nc {
+                    if csn[j] == col_sums[j] {
+                        webfull.column_mut(j).fill(true);
                     }
                 }
-            }
-
-            let mut best_val = f64::MIN;
-            let mut best_pos = None;
-            for ((i, j), &val) in newweb.indexed_iter() {
-                if !webfull[[i, j]] {
-                    if val == difexp[[i, j]].floor() {
-                        let diff = difexp[[i, j]];
-                        if diff > best_val {
-                            best_val = diff;
-                            best_pos = Some((i, j));
-                        }
-                    }
+                // smallest current value among open cells
+                let min_open = newweb
+                    .indexed_iter()
+                    .filter(|(ij, _)| !webfull[*ij])
+                    .map(|(_, &v)| v)
+                    .fold(f64::INFINITY, f64::min);
+                if !min_open.is_finite() {
+                    break;
                 }
+                // greatest shortfall among the smallest open cells
+                let greatest = newweb
+                    .indexed_iter()
+                    .filter(|(ij, &v)| !webfull[*ij] && v == min_open)
+                    .map(|(ij, _)| difexp[ij])
+                    .fold(f64::NEG_INFINITY, f64::max);
+                // R samples among ties; take the first in column-major order (R's `which`).
+                match first_col_major(nr, nc, |i, j| {
+                    !webfull[[i, j]] && newweb[[i, j]] == min_open && difexp[[i, j]] == greatest
+                }) {
+                    Some((i, j)) => newweb[[i, j]] += 1.0,
+                    None => break,
+                }
+                difexp = &expected - &newweb;
             }
+            let h2_max = entropy(&newweb);
 
-            if let Some((i, j)) = best_pos {
-                newweb[[i, j]] += 1.0;
-                difexp[[i, j]] = expected[[i, j]] - newweb[[i, j]];
-            } else {
-                break;
-            }
-        }
-
-        let mut h2_max = entropy(&newweb);
-
-        // Local refinement
-        if expected.iter().cloned().fold(f64::MIN, f64::max) > (1.0 / std::f64::consts::E) * total {
-            for _ in 0..500 {
+            // R's local refinement. Each of R's 500 tries restarts from the same matrix,
+            // so the net effect is a single adjustment.
+            let max_expected = expected.iter().cloned().fold(f64::MIN, f64::max);
+            if max_expected > 0.3679 * total {
                 let mut newmx = newweb.clone();
                 let difexp = &expected - &newmx;
-
-                let min_val = difexp.iter().cloned().fold(f64::INFINITY, f64::min);
-                let mut best = (0, 0);
-                for ((i, j), &val) in difexp.indexed_iter() {
-                    if val == min_val
-                        && newmx[[i, j]] == newmx.iter().cloned().fold(f64::MIN, f64::max)
-                    {
-                        best = (i, j);
-                        break;
-                    }
-                }
-
-                newmx[[best.0, best.1]] -= 1.0;
-
-                let row_dif = difexp.row(best.0);
-                let col_dif = difexp.column(best.1);
-
-                let mr = row_dif.iter().cloned().fold(f64::MIN, f64::max);
-                let mc = col_dif.iter().cloned().fold(f64::MIN, f64::max);
-
-                if mr >= mc {
-                    let scnd = row_dif
-                        .iter()
-                        .enumerate()
-                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                        .unwrap()
-                        .0;
-                    newmx[[best.0, scnd]] += 1.0;
-
-                    let thrd = difexp
-                        .column(scnd)
-                        .iter()
-                        .enumerate()
-                        .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                        .unwrap()
-                        .0;
-                    newmx[[thrd, scnd]] -= 1.0;
-                    newmx[[thrd, best.1]] += 1.0;
+                let min_dif = difexp.iter().cloned().fold(f64::INFINITY, f64::min);
+                let is_min = |i: usize, j: usize| difexp[[i, j]] == min_dif;
+                let n_min = difexp.iter().filter(|&&d| d == min_dif).count();
+                let first_mask: Array2<bool> = if n_min > 1 {
+                    let largest = newmx
+                        .indexed_iter()
+                        .filter(|((i, j), _)| is_min(*i, *j))
+                        .map(|(_, &v)| v)
+                        .fold(f64::MIN, f64::max);
+                    Array2::from_shape_fn((nr, nc), |(i, j)| is_min(i, j) && newmx[[i, j]] == largest)
                 } else {
-                    let scnd = col_dif
-                        .iter()
-                        .enumerate()
-                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                        .unwrap()
-                        .0;
-                    newmx[[scnd, best.1]] += 1.0;
-
-                    let thrd = difexp
-                        .row(scnd)
-                        .iter()
-                        .enumerate()
-                        .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                        .unwrap()
-                        .0;
-                    newmx[[scnd, thrd]] -= 1.0;
-                    newmx[[best.0, thrd]] += 1.0;
+                    Array2::from_shape_fn((nr, nc), |(i, j)| is_min(i, j))
+                };
+                if let Some(cell) = first_col_major(nr, nc, |i, j| first_mask[[i, j]]) {
+                    newmx[cell] -= 1.0;
+                    let throw = (0..nr).find(|&i| first_mask.row(i).iter().any(|&b| b)).unwrap();
+                    let thcol = (0..nc).find(|&j| first_mask.column(j).iter().any(|&b| b)).unwrap();
+                    let mr = difexp.row(throw).iter().cloned().fold(f64::MIN, f64::max);
+                    let mc = difexp.column(thcol).iter().cloned().fold(f64::MIN, f64::max);
+                    if mr >= mc {
+                        let scnd = (0..nc).find(|&j| difexp[[throw, j]] == mr).unwrap();
+                        newmx[[throw, scnd]] += 1.0;
+                        let cmin = difexp.column(scnd).iter().cloned().fold(f64::INFINITY, f64::min);
+                        let thrd = (0..nr).find(|&i| difexp[[i, scnd]] == cmin).unwrap();
+                        newmx[[thrd, scnd]] -= 1.0;
+                        newmx[[thrd, thcol]] += 1.0;
+                    } else {
+                        let scnd = (0..nr).find(|&i| difexp[[i, thcol]] == mc).unwrap();
+                        newmx[[scnd, thcol]] += 1.0;
+                        let rmin = difexp.row(scnd).iter().cloned().fold(f64::INFINITY, f64::min);
+                        let thrd = (0..nc).find(|&j| difexp[[scnd, j]] == rmin).unwrap();
+                        newmx[[scnd, thrd]] -= 1.0;
+                        newmx[[throw, thrd]] += 1.0;
+                    }
+                    newweb = newmx;
                 }
-
-                newweb = newmx;
             }
-        }
+            h2_max.max(entropy(&newweb))
+        };
 
-        let h2_max_improved = entropy(&newweb);
-        if h2_max_improved > h2_max {
-            h2_max = h2_max_improved;
-        }
-
-        // H2_min construction
-        let mut newweb_min = Array2::<f64>::zeros(matrix.raw_dim());
-        let mut rs_remaining = row_sums.to_vec();
-        let mut cs_remaining = col_sums.to_vec();
-
-        while rs_remaining.iter().sum::<f64>().round() != 0.0 {
-            let (i, &rmax) = rs_remaining
-                .iter()
-                .enumerate()
-                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                .unwrap();
-            let (j, &cmax) = cs_remaining
-                .iter()
-                .enumerate()
-                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                .unwrap();
-            let minval = rmax.min(cmax);
-            newweb_min[[i, j]] = minval;
-            rs_remaining[i] -= minval;
-            cs_remaining[j] -= minval;
-        }
-
-        let pnew = newweb_min.mapv(|x| x / newweb_min.sum());
-        let h2_min = entropy(&pnew);
+        let h2_min = h2_min_entropy(&row_sums.to_vec(), &col_sums.to_vec());
 
         let h2_min = h2_min.min(h2_uncorr);
         let h2_max = h2_max.max(h2_uncorr);
-
         if (h2_max - h2_min).abs() < 1e-12 {
             return 0.0;
         }
-
         (h2_max - h2_uncorr) / (h2_max - h2_min)
     }
 
@@ -1217,6 +1248,16 @@ impl InteractionMatrix {
         modularity::dirt_lpa_wb_plus(&self.inner, mini, reps)
     }
 
+    /// Run `DIRTLPAwb+` reproducibly from `seed`.
+    pub fn dirt_lpa_wb_plus_seeded(&self, mini: u32, reps: u32, seed: u64) -> LpaWbPlus {
+        modularity::dirt_lpa_wb_plus_seeded(&self.inner, mini, reps, seed)
+    }
+
+    /// Run `LPAwb+` reproducibly from `seed`.
+    pub fn lpa_wb_plus_seeded(&self, init_module_guess: Option<u32>, seed: u64) -> LpaWbPlus {
+        modularity::lpa_wb_plus_with_rng(&self.inner, init_module_guess, &mut StdRng::seed_from_u64(seed))
+    }
+
     /// Sum of all values in the matrix.
     ///
     /// Equivalent to counting edges if the matrix is unweighted.
@@ -1279,35 +1320,121 @@ impl InteractionMatrix {
         }
     }
 
-    /// Permutation significance test for NODF using the r00 null model.
-    ///
-    /// Shuffles matrix elements `n` times and computes NODF on each null matrix.
-    /// P-value is the proportion of null NODF values ≥ the observed NODF.
-    pub fn nodf_permutation_test(&self, n: usize) -> PermutationTestResult {
-        let observed = self.nodf(true, false, false).nodf;
-
-        let null_scores: Vec<f64> = (0..n)
-            .into_par_iter()
-            .map(|_| self.permute_null().nodf(true, false, false).nodf)
-            .filter(|v| !v.is_nan())
-            .collect();
-
-        permutation_stats(observed, &null_scores)
+    /// Generate one null matrix under `model` with the same row and column names.
+    pub fn null(&self, model: NullModel, trades: usize, rng: &mut impl Rng) -> Result<Self, NullModelError> {
+        Ok(InteractionMatrix {
+            inner: null_matrix(&self.inner, model, trades, rng)?,
+            rownames: self.rownames.clone(),
+            colnames: self.colnames.clone(),
+        })
     }
 
-    /// Permutation significance test for H2' using the r00 null model.
+    /// Null-model significance test for any network-level statistic.
     ///
-    /// P-value is the proportion of null H2' values ≥ the observed H2'.
-    pub fn h2_permutation_test(&self, n: usize) -> PermutationTestResult {
-        let observed = self.h2_prime();
+    /// Generates `n` null matrices in parallel under `model` (each from its own RNG seeded
+    /// from `seed` and its index, so results are reproducible for a given seed), computes
+    /// `stat` on each, and compares the observed value with the null distribution.
+    /// `trades` is used only by the curveball model.
+    pub fn null_test<F>(
+        &self,
+        n: usize,
+        model: NullModel,
+        trades: usize,
+        seed: Option<u64>,
+        stat: F,
+    ) -> Result<PermutationTestResult, NullModelError>
+    where
+        F: Fn(&InteractionMatrix) -> f64 + Sync,
+    {
+        self.null_test_seeded(n, model, trades, seed, |m, _| stat(m))
+    }
 
-        let null_scores: Vec<f64> = (0..n)
+    /// As [`InteractionMatrix::null_test`], for statistics that are themselves stochastic
+    /// (e.g. modularity). `stat` receives a seed: `seed` for the observed matrix, and a value
+    /// drawn from each null matrix's generator for the nulls.
+    pub fn null_test_seeded<F>(
+        &self,
+        n: usize,
+        model: NullModel,
+        trades: usize,
+        seed: Option<u64>,
+        stat: F,
+    ) -> Result<PermutationTestResult, NullModelError>
+    where
+        F: Fn(&InteractionMatrix, u64) -> f64 + Sync,
+    {
+        let base: u64 = seed.unwrap_or_else(|| rand::thread_rng().random());
+        let observed = stat(self, base);
+        let scores: Result<Vec<f64>, NullModelError> = (0..n)
             .into_par_iter()
-            .map(|_| self.permute_null().h2_prime())
-            .filter(|v| !v.is_nan())
+            .map(|i| {
+                let mut rng = StdRng::seed_from_u64(base.wrapping_add(i as u64 + 1));
+                let null = self.null(model, trades, &mut rng)?;
+                let stat_seed: u64 = rng.random();
+                Ok(stat(&null, stat_seed))
+            })
             .collect();
+        let scores: Vec<f64> = scores?.into_iter().filter(|v| !v.is_nan()).collect();
+        Ok(permutation_stats(model, observed, &scores))
+    }
 
-        permutation_stats(observed, &null_scores)
+    /// Null-model test of species-level d' for every species in `partition`.
+    pub fn dprime_null_test(
+        &self,
+        partition: Partition,
+        n: usize,
+        model: NullModel,
+        trades: usize,
+        seed: Option<u64>,
+    ) -> Result<Vec<DPrimeNullResult>, NullModelError> {
+        let observed = self.d_prime(partition, None);
+        let base: u64 = seed.unwrap_or_else(|| rand::thread_rng().random());
+        let nulls: Result<Vec<Vec<(String, Option<f64>)>>, NullModelError> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let mut rng = StdRng::seed_from_u64(base.wrapping_add(i as u64 + 1));
+                Ok(self.null(model, trades, &mut rng)?.d_prime(partition, None))
+            })
+            .collect();
+        let nulls = nulls?;
+        Ok(observed
+            .into_iter()
+            .enumerate()
+            .map(|(k, (species, obs))| {
+                let mut vals: Vec<f64> = nulls.iter().filter_map(|v| v[k].1).filter(|x| !x.is_nan()).collect();
+                vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let m = vals.len() as f64;
+                let mean_null = vals.iter().sum::<f64>() / m;
+                let p_value = match obs {
+                    Some(o) => (vals.iter().filter(|&&x| x >= o).count() as f64 + 1.0) / (m + 1.0),
+                    None => f64::NAN,
+                };
+                DPrimeNullResult {
+                    species,
+                    observed: obs,
+                    mean_null,
+                    lower_null: quantile7(&vals, 0.025),
+                    upper_null: quantile7(&vals, 0.975),
+                    p_value,
+                }
+            })
+            .collect())
+    }
+
+    /// Permutation test for binary NODF under the r00 null model.
+    /// Kept for backwards compatibility; prefer [`InteractionMatrix::null_test`] with
+    /// [`NullModel::Curveball`].
+    pub fn nodf_permutation_test(&self, n: usize) -> PermutationTestResult {
+        self.null_test(n, NullModel::R00, 0, None, |m| m.nodf(true, false, false).nodf)
+            .expect("r00 cannot fail")
+    }
+
+    /// Permutation test for H2' under the r00 null model.
+    /// Kept for backwards compatibility; prefer [`InteractionMatrix::null_test`] with
+    /// [`NullModel::Patefield`].
+    pub fn h2_permutation_test(&self, n: usize) -> PermutationTestResult {
+        self.null_test(n, NullModel::R00, 0, None, |m| m.h2_prime())
+            .expect("r00 cannot fail")
     }
 
     /// Compute Barber's matrix (modularity-related).
@@ -1318,21 +1445,19 @@ impl InteractionMatrix {
     }
 }
 
-fn permutation_stats(observed: f64, null_scores: &[f64]) -> PermutationTestResult {
+fn permutation_stats(null_model: NullModel, observed: f64, null_scores: &[f64]) -> PermutationTestResult {
     let n = null_scores.len() as f64;
     let mean_null = null_scores.iter().sum::<f64>() / n;
-    let variance = null_scores
-        .iter()
-        .map(|x| (x - mean_null).powi(2))
-        .sum::<f64>()
-        / n;
+    let variance = null_scores.iter().map(|x| (x - mean_null).powi(2)).sum::<f64>() / (n - 1.0);
     let sd_null = variance.sqrt();
-    let p_value = null_scores.iter().filter(|&&x| x >= observed).count() as f64 / n;
+    let k = null_scores.iter().filter(|&&x| x >= observed).count() as f64;
     PermutationTestResult {
+        null_model,
         observed,
         mean_null,
         sd_null,
-        p_value,
+        z: (observed - mean_null) / sd_null,
+        p_value: (k + 1.0) / (n + 1.0),
         n_permutations: null_scores.len(),
     }
 }
@@ -1558,6 +1683,42 @@ mod tests {
                     expected
                 );
             }
+        }
+
+        #[test]
+        fn test_h2_integer_matches_bipartite() {
+            // References from bipartite::H2fun(m, H2_integer = TRUE), deterministic in R.
+            let m1 = InteractionMatrix {
+                inner: array![[0.0, 4.0], [1.0, 5.0], [3.0, 0.0]],
+                rownames: vec!["r1".into(), "r2".into(), "r3".into()],
+                colnames: vec!["c1".into(), "c2".into()],
+            };
+            assert_eq!(precision_f64(m1.h2_prime(), 6), 0.661146);
+
+            // Dominant cell: exercises the local refinement of H2_max.
+            let m2 = InteractionMatrix {
+                inner: array![
+                    [23.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 3.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 1.0, 1.0, 0.0]
+                ],
+                rownames: vec!["r1".into(), "r2".into(), "r3".into(), "r4".into()],
+                colnames: vec!["c1".into(), "c2".into(), "c3".into(), "c4".into()],
+            };
+            assert_eq!(precision_f64(m2.h2_prime(), 6), 0.927897);
+        }
+
+        #[test]
+        fn test_h2_continuous_matches_bipartite() {
+            // Reference: bipartite::H2fun(m, H2_integer = FALSE) = 0.525638281578
+            let data = array![[1.5, 0.0, 2.25], [0.0, 3.1, 0.4], [0.2, 1.7, 1.1]];
+            let matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec!["a".into(), "b".into(), "c".into()],
+                colnames: vec!["x".into(), "y".into(), "z".into()],
+            };
+            assert_eq!(precision_f64(matrix.h2_prime(), 4), 0.5256);
         }
 
         #[test]

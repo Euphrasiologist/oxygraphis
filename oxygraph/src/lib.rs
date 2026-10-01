@@ -63,6 +63,7 @@ pub mod int_matrix;
 pub use int_matrix::InteractionMatrix;
 pub use int_matrix::InteractionMatrixStats;
 pub use int_matrix::PermutationTestResult;
+pub use int_matrix::DPrimeNullResult;
 
 /// The derived graphs of a bipartite graph.
 ///
@@ -81,6 +82,10 @@ pub use modularity::LpaWbPlus;
 
 /// Sorting algorithms on arrays.
 pub mod sort;
+
+/// Null models for bipartite interaction matrices.
+pub mod null;
+pub use null::NullModel;
 
 /// The margins for the all the graph plots
 /// used in this crate.
