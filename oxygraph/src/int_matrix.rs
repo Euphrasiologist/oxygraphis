@@ -39,6 +39,44 @@ fn entropy(matrix: &Matrix) -> f64 {
         .sum()
 }
 
+/// First (i, j) in column-major order satisfying `pred`, matching R's `which(...)[1]`.
+fn first_col_major(nr: usize, nc: usize, pred: impl Fn(usize, usize) -> bool) -> Option<(usize, usize)> {
+    for j in 0..nc {
+        for i in 0..nr {
+            if pred(i, j) {
+                return Some((i, j));
+            }
+        }
+    }
+    None
+}
+
+/// Entropy of the minimum-entropy matrix with the given marginal totals, built greedily as in
+/// `bipartite::H2fun`: repeatedly place min(largest remaining row total, largest remaining
+/// column total) at their intersection, taking the first maximum on ties.
+fn h2_min_entropy(row_sums: &[f64], col_sums: &[f64]) -> f64 {
+    let (nr, nc) = (row_sums.len(), col_sums.len());
+    let mut web = Array2::<f64>::zeros((nr, nc));
+    let first_max = |v: &[f64]| {
+        let m = v.iter().cloned().fold(f64::MIN, f64::max);
+        v.iter().position(|&x| x == m).unwrap()
+    };
+    let mut rs_rest = row_sums.to_vec();
+    let mut cs_rest = col_sums.to_vec();
+    let mut guard = 0;
+    while (rs_rest.iter().sum::<f64>() * 1e10).round() != 0.0 && guard < 10 * (nr * nc + 1) {
+        let i = first_max(&rs_rest);
+        let j = first_max(&cs_rest);
+        web[[i, j]] = rs_rest[i].min(cs_rest[j]);
+        let rsn = web.sum_axis(Axis(1));
+        let csn = web.sum_axis(Axis(0));
+        rs_rest = row_sums.iter().zip(rsn.iter()).map(|(a, b)| a - b).collect();
+        cs_rest = col_sums.iter().zip(csn.iter()).map(|(a, b)| a - b).collect();
+        guard += 1;
+    }
+    entropy(&web)
+}
+
 /// Result structure for the Nested NODF calculation, modeled after the `vegan::nestednodf` output.
 #[derive(Debug, Clone)]
 pub struct NestedNODFResult {
@@ -853,195 +891,125 @@ impl InteractionMatrix {
     /// ```
     pub fn h2_prime(&self) -> f64 {
         let matrix = &self.inner;
-
+        let (nr, nc) = matrix.dim();
         let is_integer = matrix.iter().all(|&v| v.fract() == 0.0);
 
         let total: f64 = matrix.sum();
+        if total <= 0.0 {
+            return 0.0;
+        }
         let row_sums = matrix.sum_axis(Axis(1));
         let col_sums = matrix.sum_axis(Axis(0));
-
-        // H2uncorr = entropy of original matrix
         let h2_uncorr = entropy(matrix);
 
-        let expected = row_sums.clone()
-    .insert_axis(Axis(1)) // shape (rows, 1)
-    * col_sums.clone().insert_axis(Axis(0)) // shape (1, cols)
-    / total;
+        // Expected matrix under independence (R: `exexpec`).
+        let expected = row_sums.clone().insert_axis(Axis(1))
+            * col_sums.clone().insert_axis(Axis(0))
+            / total;
 
-        // For continuous data, H2_max = entropy of the independence (expected) matrix.
-        if !is_integer {
-            let h2_max = entropy(&expected);
-            let h2_min = {
-                let mut newweb_min = Array2::<f64>::zeros(matrix.raw_dim());
-                let mut rs_remaining = row_sums.to_vec();
-                let mut cs_remaining = col_sums.to_vec();
-                while rs_remaining.iter().sum::<f64>() > 1e-9 {
-                    let (i, &rmax) = rs_remaining.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap();
-                    let (j, &cmax) = cs_remaining.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap();
-                    let minval = rmax.min(cmax);
-                    newweb_min[[i, j]] = minval;
-                    rs_remaining[i] -= minval;
-                    cs_remaining[j] -= minval;
-                }
-                let pnew = newweb_min.mapv(|x| x / newweb_min.sum());
-                entropy(&pnew)
-            };
-            let h2_min = h2_min.min(h2_uncorr);
-            let h2_max = h2_max.max(h2_uncorr);
-            if (h2_max - h2_min).abs() < 1e-12 { return 0.0; }
-            return (h2_max - h2_uncorr) / (h2_max - h2_min);
-        }
+        let h2_max = if !is_integer {
+            // R: H2_integer = FALSE
+            entropy(&expected)
+        } else {
+            // R: H2_integer = TRUE. Fill an integer matrix towards the expected one.
+            let mut newweb = expected.mapv(f64::floor);
+            // On the first pass R compares against an all-zero matrix, so `difexp` starts
+            // as the expected matrix itself; afterwards it is expected - newweb.
+            let mut difexp = expected.clone();
+            let mut webfull = Array2::<bool>::from_elem((nr, nc), false);
 
-        // Build integer-aware expected matrix
-        let mut newweb = expected.mapv(f64::floor);
-        let mut difexp = &expected - &newweb;
-        let mut webfull = Array2::<bool>::from_elem(matrix.raw_dim(), false);
-
-        while newweb.sum() < total {
-            // Mark filled rows and columns
-            for (i, sum) in newweb.sum_axis(Axis(1)).iter().enumerate() {
-                if (*sum - row_sums[i]).abs() < 1e-6 {
-                    for j in 0..matrix.ncols() {
-                        webfull[[i, j]] = true;
+            while newweb.sum() < total - 1e-9 {
+                let rsn = newweb.sum_axis(Axis(1));
+                let csn = newweb.sum_axis(Axis(0));
+                for i in 0..nr {
+                    if rsn[i] == row_sums[i] {
+                        webfull.row_mut(i).fill(true);
                     }
                 }
-            }
-            for (j, sum) in newweb.sum_axis(Axis(0)).iter().enumerate() {
-                if (*sum - col_sums[j]).abs() < 1e-6 {
-                    for i in 0..matrix.nrows() {
-                        webfull[[i, j]] = true;
+                for j in 0..nc {
+                    if csn[j] == col_sums[j] {
+                        webfull.column_mut(j).fill(true);
                     }
                 }
-            }
-
-            let mut best_val = f64::MIN;
-            let mut best_pos = None;
-            for ((i, j), &val) in newweb.indexed_iter() {
-                if !webfull[[i, j]] {
-                    if val == difexp[[i, j]].floor() {
-                        let diff = difexp[[i, j]];
-                        if diff > best_val {
-                            best_val = diff;
-                            best_pos = Some((i, j));
-                        }
-                    }
+                // smallest current value among open cells
+                let min_open = newweb
+                    .indexed_iter()
+                    .filter(|(ij, _)| !webfull[*ij])
+                    .map(|(_, &v)| v)
+                    .fold(f64::INFINITY, f64::min);
+                if !min_open.is_finite() {
+                    break;
                 }
+                // greatest shortfall among the smallest open cells
+                let greatest = newweb
+                    .indexed_iter()
+                    .filter(|(ij, &v)| !webfull[*ij] && v == min_open)
+                    .map(|(ij, _)| difexp[ij])
+                    .fold(f64::NEG_INFINITY, f64::max);
+                // R samples among ties; take the first in column-major order (R's `which`).
+                match first_col_major(nr, nc, |i, j| {
+                    !webfull[[i, j]] && newweb[[i, j]] == min_open && difexp[[i, j]] == greatest
+                }) {
+                    Some((i, j)) => newweb[[i, j]] += 1.0,
+                    None => break,
+                }
+                difexp = &expected - &newweb;
             }
+            let h2_max = entropy(&newweb);
 
-            if let Some((i, j)) = best_pos {
-                newweb[[i, j]] += 1.0;
-                difexp[[i, j]] = expected[[i, j]] - newweb[[i, j]];
-            } else {
-                break;
-            }
-        }
-
-        let mut h2_max = entropy(&newweb);
-
-        // Local refinement
-        if expected.iter().cloned().fold(f64::MIN, f64::max) > (1.0 / std::f64::consts::E) * total {
-            for _ in 0..500 {
+            // R's local refinement. Each of R's 500 tries restarts from the same matrix,
+            // so the net effect is a single adjustment.
+            let max_expected = expected.iter().cloned().fold(f64::MIN, f64::max);
+            if max_expected > 0.3679 * total {
                 let mut newmx = newweb.clone();
                 let difexp = &expected - &newmx;
-
-                let min_val = difexp.iter().cloned().fold(f64::INFINITY, f64::min);
-                let mut best = (0, 0);
-                for ((i, j), &val) in difexp.indexed_iter() {
-                    if val == min_val
-                        && newmx[[i, j]] == newmx.iter().cloned().fold(f64::MIN, f64::max)
-                    {
-                        best = (i, j);
-                        break;
-                    }
-                }
-
-                newmx[[best.0, best.1]] -= 1.0;
-
-                let row_dif = difexp.row(best.0);
-                let col_dif = difexp.column(best.1);
-
-                let mr = row_dif.iter().cloned().fold(f64::MIN, f64::max);
-                let mc = col_dif.iter().cloned().fold(f64::MIN, f64::max);
-
-                if mr >= mc {
-                    let scnd = row_dif
-                        .iter()
-                        .enumerate()
-                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                        .unwrap()
-                        .0;
-                    newmx[[best.0, scnd]] += 1.0;
-
-                    let thrd = difexp
-                        .column(scnd)
-                        .iter()
-                        .enumerate()
-                        .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                        .unwrap()
-                        .0;
-                    newmx[[thrd, scnd]] -= 1.0;
-                    newmx[[thrd, best.1]] += 1.0;
+                let min_dif = difexp.iter().cloned().fold(f64::INFINITY, f64::min);
+                let is_min = |i: usize, j: usize| difexp[[i, j]] == min_dif;
+                let n_min = difexp.iter().filter(|&&d| d == min_dif).count();
+                let first_mask: Array2<bool> = if n_min > 1 {
+                    let largest = newmx
+                        .indexed_iter()
+                        .filter(|((i, j), _)| is_min(*i, *j))
+                        .map(|(_, &v)| v)
+                        .fold(f64::MIN, f64::max);
+                    Array2::from_shape_fn((nr, nc), |(i, j)| is_min(i, j) && newmx[[i, j]] == largest)
                 } else {
-                    let scnd = col_dif
-                        .iter()
-                        .enumerate()
-                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                        .unwrap()
-                        .0;
-                    newmx[[scnd, best.1]] += 1.0;
-
-                    let thrd = difexp
-                        .row(scnd)
-                        .iter()
-                        .enumerate()
-                        .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                        .unwrap()
-                        .0;
-                    newmx[[scnd, thrd]] -= 1.0;
-                    newmx[[best.0, thrd]] += 1.0;
+                    Array2::from_shape_fn((nr, nc), |(i, j)| is_min(i, j))
+                };
+                if let Some(cell) = first_col_major(nr, nc, |i, j| first_mask[[i, j]]) {
+                    newmx[cell] -= 1.0;
+                    let throw = (0..nr).find(|&i| first_mask.row(i).iter().any(|&b| b)).unwrap();
+                    let thcol = (0..nc).find(|&j| first_mask.column(j).iter().any(|&b| b)).unwrap();
+                    let mr = difexp.row(throw).iter().cloned().fold(f64::MIN, f64::max);
+                    let mc = difexp.column(thcol).iter().cloned().fold(f64::MIN, f64::max);
+                    if mr >= mc {
+                        let scnd = (0..nc).find(|&j| difexp[[throw, j]] == mr).unwrap();
+                        newmx[[throw, scnd]] += 1.0;
+                        let cmin = difexp.column(scnd).iter().cloned().fold(f64::INFINITY, f64::min);
+                        let thrd = (0..nr).find(|&i| difexp[[i, scnd]] == cmin).unwrap();
+                        newmx[[thrd, scnd]] -= 1.0;
+                        newmx[[thrd, thcol]] += 1.0;
+                    } else {
+                        let scnd = (0..nr).find(|&i| difexp[[i, thcol]] == mc).unwrap();
+                        newmx[[scnd, thcol]] += 1.0;
+                        let rmin = difexp.row(scnd).iter().cloned().fold(f64::INFINITY, f64::min);
+                        let thrd = (0..nc).find(|&j| difexp[[scnd, j]] == rmin).unwrap();
+                        newmx[[scnd, thrd]] -= 1.0;
+                        newmx[[throw, thrd]] += 1.0;
+                    }
+                    newweb = newmx;
                 }
-
-                newweb = newmx;
             }
-        }
+            h2_max.max(entropy(&newweb))
+        };
 
-        let h2_max_improved = entropy(&newweb);
-        if h2_max_improved > h2_max {
-            h2_max = h2_max_improved;
-        }
-
-        // H2_min construction
-        let mut newweb_min = Array2::<f64>::zeros(matrix.raw_dim());
-        let mut rs_remaining = row_sums.to_vec();
-        let mut cs_remaining = col_sums.to_vec();
-
-        while rs_remaining.iter().sum::<f64>().round() != 0.0 {
-            let (i, &rmax) = rs_remaining
-                .iter()
-                .enumerate()
-                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                .unwrap();
-            let (j, &cmax) = cs_remaining
-                .iter()
-                .enumerate()
-                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-                .unwrap();
-            let minval = rmax.min(cmax);
-            newweb_min[[i, j]] = minval;
-            rs_remaining[i] -= minval;
-            cs_remaining[j] -= minval;
-        }
-
-        let pnew = newweb_min.mapv(|x| x / newweb_min.sum());
-        let h2_min = entropy(&pnew);
+        let h2_min = h2_min_entropy(&row_sums.to_vec(), &col_sums.to_vec());
 
         let h2_min = h2_min.min(h2_uncorr);
         let h2_max = h2_max.max(h2_uncorr);
-
         if (h2_max - h2_min).abs() < 1e-12 {
             return 0.0;
         }
-
         (h2_max - h2_uncorr) / (h2_max - h2_min)
     }
 
@@ -1582,6 +1550,30 @@ mod tests {
                     expected
                 );
             }
+        }
+
+        #[test]
+        fn test_h2_integer_matches_bipartite() {
+            // References from bipartite::H2fun(m, H2_integer = TRUE), deterministic in R.
+            let m1 = InteractionMatrix {
+                inner: array![[0.0, 4.0], [1.0, 5.0], [3.0, 0.0]],
+                rownames: vec!["r1".into(), "r2".into(), "r3".into()],
+                colnames: vec!["c1".into(), "c2".into()],
+            };
+            assert_eq!(precision_f64(m1.h2_prime(), 6), 0.661146);
+
+            // Dominant cell: exercises the local refinement of H2_max.
+            let m2 = InteractionMatrix {
+                inner: array![
+                    [23.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 3.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 1.0, 1.0, 0.0]
+                ],
+                rownames: vec!["r1".into(), "r2".into(), "r3".into(), "r4".into()],
+                colnames: vec!["c1".into(), "c2".into(), "c3".into(), "c4".into()],
+            };
+            assert_eq!(precision_f64(m2.h2_prime(), 6), 0.927897);
         }
 
         #[test]
