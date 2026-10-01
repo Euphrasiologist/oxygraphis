@@ -816,45 +816,45 @@ impl InteractionMatrix {
 
     /// Compute the H2' specialization index for a bipartite interaction matrix.
     ///
-    /// This implementation replicates the integer-aware behavior of the R `bipartite::H2fun` function
-    /// with `H2_integer = TRUE`. It assumes the matrix contains only non-negative integer entries.
+    /// Replicates the R function `bipartite::H2fun`. For matrices of non-negative integers
+    /// it follows `H2_integer = TRUE`; for any non-integer weights it follows
+    /// `H2_integer = FALSE`, where the maximum entropy is that of the expected matrix
+    /// under independence.
     ///
-    /// The method measures network-level specialization based on deviation from maximum entropy
-    /// (uncorrected Shannon entropy of interaction frequencies) and compares this with a maximum
-    /// entropy matrix (subject to integer constraints) and a minimum entropy configuration derived
-    /// by greedily filling the matrix while maintaining row and column marginal totals.
+    /// The method compares the observed (uncorrected) Shannon entropy of interaction
+    /// frequencies with a maximum entropy matrix and a minimum entropy configuration
+    /// derived by greedily filling the matrix while maintaining row and column totals.
     ///
     /// Returned value is:
-    /// ```
+    /// ```text
     /// H2' = (H2_max - H2_uncorr) / (H2_max - H2_min)
     /// ```
     /// where:
     /// - `H2_uncorr` is the observed entropy of the interaction matrix
-    /// - `H2_max` is the entropy of an integer-approximated expected matrix under independence
+    /// - `H2_max` is the entropy of the expected matrix under independence (integer-approximated
+    ///   for integer data)
     /// - `H2_min` is the entropy of a maximally specialized (minimum entropy) matrix
-    ///
-    /// Panics if the matrix contains non-integer values.
     ///
     /// # Returns
     /// `f64` — the H2' value, in the range [0, 1], where 1 indicates maximum specialization.
     ///
     /// # Example
     /// ```rust
-    /// let data = array![
-    ///     [1.0, 0.0, 1.0],
-    ///     [0.0, 2.0, 0.0],
-    ///     [0.0, 1.0, 1.0]
-    /// ];
-    /// let matrix = InteractionMatrix::from(data);
+    /// use ndarray::array;
+    /// use oxygraph::InteractionMatrix;
+    ///
+    /// let matrix = InteractionMatrix {
+    ///     inner: array![[1.0, 0.0, 1.0], [0.0, 2.0, 0.0], [0.0, 1.0, 1.0]],
+    ///     rownames: vec!["a".into(), "b".into(), "c".into()],
+    ///     colnames: vec!["x".into(), "y".into(), "z".into()],
+    /// };
     /// let h2p = matrix.h2_prime();
     /// assert!(h2p >= 0.0 && h2p <= 1.0);
     /// ```
     pub fn h2_prime(&self) -> f64 {
         let matrix = &self.inner;
 
-        if matrix.iter().any(|&v| v.fract() != 0.0) {
-            panic!("Matrix contains non-integer values. Set H2_integer = FALSE to bypass.");
-        }
+        let is_integer = matrix.iter().all(|&v| v.fract() == 0.0);
 
         let total: f64 = matrix.sum();
         let row_sums = matrix.sum_axis(Axis(1));
@@ -867,6 +867,30 @@ impl InteractionMatrix {
     .insert_axis(Axis(1)) // shape (rows, 1)
     * col_sums.clone().insert_axis(Axis(0)) // shape (1, cols)
     / total;
+
+        // For continuous data, H2_max = entropy of the independence (expected) matrix.
+        if !is_integer {
+            let h2_max = entropy(&expected);
+            let h2_min = {
+                let mut newweb_min = Array2::<f64>::zeros(matrix.raw_dim());
+                let mut rs_remaining = row_sums.to_vec();
+                let mut cs_remaining = col_sums.to_vec();
+                while rs_remaining.iter().sum::<f64>() > 1e-9 {
+                    let (i, &rmax) = rs_remaining.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap();
+                    let (j, &cmax) = cs_remaining.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap();
+                    let minval = rmax.min(cmax);
+                    newweb_min[[i, j]] = minval;
+                    rs_remaining[i] -= minval;
+                    cs_remaining[j] -= minval;
+                }
+                let pnew = newweb_min.mapv(|x| x / newweb_min.sum());
+                entropy(&pnew)
+            };
+            let h2_min = h2_min.min(h2_uncorr);
+            let h2_max = h2_max.max(h2_uncorr);
+            if (h2_max - h2_min).abs() < 1e-12 { return 0.0; }
+            return (h2_max - h2_uncorr) / (h2_max - h2_min);
+        }
 
         // Build integer-aware expected matrix
         let mut newweb = expected.mapv(f64::floor);
@@ -1558,6 +1582,18 @@ mod tests {
                     expected
                 );
             }
+        }
+
+        #[test]
+        fn test_h2_continuous_matches_bipartite() {
+            // Reference: bipartite::H2fun(m, H2_integer = FALSE) = 0.525638281578
+            let data = array![[1.5, 0.0, 2.25], [0.0, 3.1, 0.4], [0.2, 1.7, 1.1]];
+            let matrix = InteractionMatrix {
+                inner: data,
+                rownames: vec!["a".into(), "b".into(), "c".into()],
+                colnames: vec!["x".into(), "y".into(), "z".into()],
+            };
+            assert_eq!(precision_f64(matrix.h2_prime(), 4), 0.5256);
         }
 
         #[test]
