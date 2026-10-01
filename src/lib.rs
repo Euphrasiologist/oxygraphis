@@ -3,7 +3,7 @@ use calm_io::*;
 use clap::{arg, crate_version, value_parser, ArgMatches, Command};
 use oxygraph::{
     bipartite, BipartiteGraph, BipartiteStats, DerivedGraphStats, DerivedGraphs, InteractionMatrix,
-    InteractionMatrixStats, LpaWbPlus, PermutationTestResult,
+    InteractionMatrixStats, LpaWbPlus, NullModel, PermutationTestResult,
 };
 use rayon::prelude::*;
 use std::{io::Write, path::PathBuf};
@@ -111,10 +111,29 @@ pub fn cli() -> Command {
                                 .requires("nodf")
                         )
                         .arg(
-                            arg!(-P --permutations [PERMUTATIONS] "Run a permutation significance test with N iterations \
-                                using the r00 null model (random element shuffle, preserving matrix fill). \
-                                Applies to --nodf or --h2. Outputs: observed value, null mean, null SD, \
-                                and one-tailed p-value. N=999 is a reasonable default; N=9999 for publication.")
+                            arg!(-P --permutations [PERMUTATIONS] "Run a null-model significance test with N null \
+                                matrices (see --null). Applies to --nodf, --h2 and --dprime. Outputs the observed \
+                                value, null mean, null SD, standardised effect size z, one-tailed P = (k + 1)/(N + 1), \
+                                N and the null model. For --dprime, outputs per-species null means and 95% intervals.")
+                                .value_parser(value_parser!(usize))
+                        )
+                        .arg(
+                            arg!(--null [NULL] "Null model for --permutations. r00: shuffle all cells \
+                                (fixed fill only). patefield: random integer matrices with the observed \
+                                row and column totals (as R's r2dtable); use for H2', d' and weighted metrics. \
+                                curveball: random binary matrices with the observed row and column degrees \
+                                (Strona et al. 2014); use for NODF. [default: r00]")
+                                .value_parser(["r00", "patefield", "curveball"])
+                                .default_value("r00")
+                        )
+                        .arg(
+                            arg!(--seed [SEED] "Random seed for the null matrices, for reproducible results. \
+                                Null matrix i uses seed + i.")
+                                .value_parser(value_parser!(u64))
+                        )
+                        .arg(
+                            arg!(--trades [TRADES] "Curveball trades per null matrix. Each null matrix starts \
+                                from the observed matrix. [default: max(1000, 50 x number of rows)]")
                                 .value_parser(value_parser!(usize))
                         )
                         .arg(
@@ -204,6 +223,31 @@ pub fn cli() -> Command {
                             Mutually exclusive with --lpawbplus.")
                             .action(clap::ArgAction::SetTrue)
                             .conflicts_with("lpawbplus")
+                    )
+                    .arg(
+                        arg!(-P --permutations [PERMUTATIONS] "Test Q against N null matrices (see --null), \
+                            running the chosen algorithm on each. Outputs the observed Q, null mean, null SD, \
+                            z, one-tailed P = (k + 1)/(N + 1), N and the null model.")
+                            .value_parser(value_parser!(usize))
+                    )
+                        .arg(
+                        arg!(--null [NULL] "Null model for --permutations. r00: shuffle all cells \
+                            (fixed fill only). patefield: random integer matrices with the observed \
+                            row and column totals (as R's r2dtable); use for H2', d' and weighted metrics. \
+                            curveball: random binary matrices with the observed row and column degrees \
+                            (Strona et al. 2014); use for NODF. [default: patefield]")
+                            .value_parser(["r00", "patefield", "curveball"])
+                            .default_value("patefield")
+                    )
+                    .arg(
+                        arg!(--seed [SEED] "Random seed for the null matrices, for reproducible results. \
+                            Null matrix i uses seed + i.")
+                            .value_parser(value_parser!(u64))
+                    )
+                    .arg(
+                        arg!(--trades [TRADES] "Curveball trades per null matrix. Each null matrix starts \
+                            from the observed matrix. [default: max(1000, 50 x number of rows)]")
+                            .value_parser(value_parser!(usize))
                     )
                     .arg(
                         arg!(--mini [MINI] "DIRTLPAwb+ only: minimum number of modules from which to restart \
@@ -417,6 +461,21 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         } else {
                             bipartite::Partition::Parasites
                         };
+                        if let Some(n) = permutations {
+                            let (model, seed, trades) = null_settings(im_matches, im_mat.inner.nrows())?;
+                            let res = im_mat
+                                .dprime_null_test(partition, n, model, trades, seed)
+                                .map_err(|e| Error::msg(format!("{}", e)))?;
+                            stdoutln!("species\tdprime\tmean_null\tlower_null\tupper_null\tp_value\tn_perms\tnull_model")?;
+                            for r in res {
+                                let obs = r.observed.map(|e| e.to_string()).unwrap_or("None".into());
+                                stdoutln!(
+                                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                                    r.species, obs, r.mean_null, r.lower_null, r.upper_null, r.p_value, n, model
+                                )?;
+                            }
+                            return Ok(());
+                        }
                         let dprimes = im_mat.d_prime(partition, None);
                         for (spp, d_prime) in &dprimes {
                             let d_prime_fmt =
@@ -429,29 +488,21 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         let h2 = im_mat.h2_prime();
                         stdoutln!("H2'\t{}", h2)?;
                         if let Some(n) = permutations {
-                            let PermutationTestResult {
-                                observed,
-                                mean_null,
-                                sd_null,
-                                p_value,
-                                n_permutations,
-                            } = im_mat.h2_permutation_test(n);
-                            stdoutln!("obs\tmean_null\tsd_null\tp_value\tn_perms")?;
-                            stdoutln!("{}\t{}\t{}\t{}\t{}", observed, mean_null, sd_null, p_value, n_permutations)?;
+                            let (model, seed, trades) = null_settings(im_matches, im_mat.inner.nrows())?;
+                            let r = im_mat
+                                .null_test(n, model, trades, seed, |m| m.h2_prime())
+                                .map_err(|e| Error::msg(format!("{}", e)))?;
+                            print_null_test(&r)?;
                         }
                     } else if nodf {
                         let nodf_result = im_mat.nodf(true, weighted, wbinary);
                         stdoutln!("NODF\t{}", nodf_result.nodf)?;
                         if let Some(n) = permutations {
-                            let PermutationTestResult {
-                                observed,
-                                mean_null,
-                                sd_null,
-                                p_value,
-                                n_permutations,
-                            } = im_mat.nodf_permutation_test(n);
-                            stdoutln!("obs\tmean_null\tsd_null\tp_value\tn_perms")?;
-                            stdoutln!("{}\t{}\t{}\t{}\t{}", observed, mean_null, sd_null, p_value, n_permutations)?;
+                            let (model, seed, trades) = null_settings(im_matches, im_mat.inner.nrows())?;
+                            let r = im_mat
+                                .null_test(n, model, trades, seed, |m| m.nodf(true, weighted, wbinary).nodf)
+                                .map_err(|e| Error::msg(format!("{}", e)))?;
+                            print_null_test(&r)?;
                         }
                     } else if print {
                         stdoutln!("{}", im_mat)?;
@@ -548,6 +599,7 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         .get_one::<PathBuf>("output")
                         .expect("defaulted by clap.");
 
+                    let mod_seed = mod_matches.get_one::<u64>("seed").copied();
                     let mini = *mod_matches.get_one::<u32>("mini").expect("defaulted by clap.");
                     let reps = *mod_matches.get_one::<u32>("reps").expect("defaulted by clap.");
 
@@ -558,10 +610,16 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                         let kind: &str;
                         let mut modularity_obj = if dirtlpawbplus {
                             kind = "DIRTLPAwb+";
-                            int_mat.clone().dirt_lpa_wb_plus(mini, reps)
+                            match mod_seed {
+                                Some(sd) => int_mat.dirt_lpa_wb_plus_seeded(mini, reps, sd),
+                                None => int_mat.clone().dirt_lpa_wb_plus(mini, reps),
+                            }
                         } else {
                             kind = "LPAwb+";
-                            int_mat.clone().lpa_wb_plus(None)
+                            match mod_seed {
+                                Some(sd) => int_mat.lpa_wb_plus_seeded(None, sd),
+                                None => int_mat.clone().lpa_wb_plus(None),
+                            }
                         };
                         let modularity = modularity_obj.modularity;
                         let (int_mat, modules) = modularity_obj.plot(int_mat);
@@ -588,11 +646,33 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
                             }
                         }
                         modules_file.flush()?;
+                    } else if let Some(n) = mod_matches.get_one::<usize>("permutations").copied() {
+                        if !(dirtlpawbplus || lpawbplus) {
+                            return Err(Error::msg("Please specify --lpawbplus or --dirtlpawbplus."));
+                        }
+                        let (model, seed, trades) = null_settings(mod_matches, int_mat.inner.nrows())?;
+                        let r = int_mat
+                            .null_test_seeded(n, model, trades, seed, |m, sd| {
+                                if dirtlpawbplus {
+                                    m.dirt_lpa_wb_plus_seeded(mini, reps, sd).modularity
+                                } else {
+                                    m.lpa_wb_plus_seeded(None, sd).modularity
+                                }
+                            })
+                            .map_err(|e| Error::msg(format!("{}", e)))?;
+                        stdoutln!("{}", if dirtlpawbplus { "DIRTLPAwb+" } else { "LPAwb+" })?;
+                        print_null_test(&r)?;
                     } else if dirtlpawbplus {
-                        let LpaWbPlus { modularity, .. } = int_mat.dirt_lpa_wb_plus(mini, reps);
+                        let LpaWbPlus { modularity, .. } = match mod_seed {
+                            Some(sd) => int_mat.dirt_lpa_wb_plus_seeded(mini, reps, sd),
+                            None => int_mat.dirt_lpa_wb_plus(mini, reps),
+                        };
                         stdoutln!("DIRTLPAwb+\n{}", modularity)?;
                     } else if lpawbplus {
-                        let LpaWbPlus { modularity, .. } = int_mat.lpa_wb_plus(None);
+                        let LpaWbPlus { modularity, .. } = match mod_seed {
+                            Some(sd) => int_mat.lpa_wb_plus_seeded(None, sd),
+                            None => int_mat.lpa_wb_plus(None),
+                        };
                         stdoutln!("LPAwb+\n{}", modularity)?;
                     } else {
                         return Err(Error::msg("Please specify --lpawbplus or --dirtlpawbplus."));
@@ -674,5 +754,30 @@ pub fn process_matches(matches: &ArgMatches) -> Result<()> {
         _ => unreachable!("Should never reach here."),
     }
 
+    Ok(())
+}
+
+/// Parse the shared null-model arguments.
+fn null_settings(m: &ArgMatches, nrows: usize) -> Result<(NullModel, Option<u64>, usize)> {
+    let model: NullModel = m
+        .get_one::<String>("null")
+        .expect("defaulted by clap.")
+        .parse()
+        .map_err(|e| Error::msg(format!("{}", e)))?;
+    let seed = m.get_one::<u64>("seed").copied();
+    let trades = m
+        .get_one::<usize>("trades")
+        .copied()
+        .unwrap_or_else(|| oxygraph::null::default_trades(nrows));
+    Ok((model, seed, trades))
+}
+
+/// Print a null-model test result as a two-line TSV.
+fn print_null_test(r: &PermutationTestResult) -> Result<()> {
+    stdoutln!("obs\tmean_null\tsd_null\tz\tp_value\tn_perms\tnull_model")?;
+    stdoutln!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        r.observed, r.mean_null, r.sd_null, r.z, r.p_value, r.n_permutations, r.null_model
+    )?;
     Ok(())
 }

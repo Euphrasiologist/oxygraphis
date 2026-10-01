@@ -39,7 +39,7 @@ Sp2     Host2   2.0
 - **`to`** — host/column stratum (e.g. host plant, flower species)
 - **`weight`** — interaction strength; any positive numeric value (integer or float)
 
-The graph must be strictly bipartite: all edges go from one stratum to the other. The default delimiter is tab; use `-d ','` for CSV.
+The graph must be strictly bipartite: all edges go from one stratum to the other. Rows and columns of the interaction matrix are ordered alphabetically by species name. The default delimiter is tab; use `-d ','` for CSV.
 
 ---
 
@@ -99,7 +99,10 @@ Builds an *n* × *m* matrix (parasites × hosts) and computes metrics. With no m
 | `-n, --nodf` | Compute NODF (Nestedness metric based on Overlap and Decreasing Fill). The matrix is sorted by decreasing marginal totals before calculation. Score ranges 0–100; higher = more nested. |
 | `-w, --weighted` | Use weighted NODF rather than binary. Requires `--nodf`. |
 | `--wbinary` | Use weighted-binary NODF (binary filter applied to weighted matrix). Requires `--nodf`. |
-| `-P, --permutations N` | Run a permutation significance test with *N* iterations against the r00 null model (random shuffle of all non-zero elements, preserving matrix dimensions and fill). Applies to `--nodf` or `--h2`. Outputs: observed value, null mean, null SD, one-tailed p-value, N. Recommended: 999 for exploration, 9999 for publication. |
+| `-P, --permutations N` | Test the metric against *N* null matrices (see `--null`). Applies to `--nodf`, `--h2` and `--dprime`. Outputs the observed value, null mean, null SD, standardised effect size *z*, one-tailed *P* = (*k* + 1)/(*N* + 1), *N* and the null model. With `--dprime`, outputs each species' d′ with its null mean and central 95% interval. |
+| `--null MODEL` | Null model for `--permutations`: `r00` (shuffle all cells; fill only), `patefield` (random integer matrices with the observed row and column totals, as R's `r2dtable`; use for H2′, d′ and weighted metrics) or `curveball` (random binary matrices with the observed row and column degrees, Strona et al. 2014; use for NODF). Default: `r00`. |
+| `--seed N` | Random seed. Results are identical for a given seed, whatever the number of threads. |
+| `--trades N` | Curveball trades per null matrix; every null matrix starts from the observed matrix. Default: max(1000, 50 × rows). |
 | `-d, --dprime parasites\|hosts` | Compute d' (d-prime) for each species in the chosen stratum. d' measures how much a species deviates from using partners in proportion to their overall marginal frequency. 0 = complete generalist; 1 = complete specialist. Also prints `mean_d'` across the stratum. |
 | `--h2` | Compute H2' (H2-prime), a network-level specialisation index. Scaled so that 0 = most generalised and 1 = most specialised network possible given the observed marginal totals. Works with both integer counts and continuous weights. Combine with `--permutations N` to test significance. |
 
@@ -162,6 +165,10 @@ Finds groups of parasites and hosts that interact more with each other than with
 |------|-------------|
 | `-l, --lpawbplus` | Compute Q using LPAwb+ (Beckett 2016). Fast; suitable for exploration. Mutually exclusive with `--dirtlpawbplus`. |
 | `-d, --dirtlpawbplus` | Compute Q using DIRTLPAwb+ (Beckett 2016). Reruns LPAwb+ from multiple starting conditions to escape local optima. Recommended for final analyses. Mutually exclusive with `--lpawbplus`. |
+| `-P, --permutations N` | Test *Q* against *N* null matrices, running the chosen algorithm on each. Same output columns as for `interaction-matrix`. |
+| `--null MODEL` | Null model for `--permutations`. Default: `patefield`. |
+| `--seed N` | Random seed for the observed and null runs, so *Q* and its null distribution are reproducible. |
+| `--trades N` | Curveball trades per null matrix. |
 | `--mini N` | DIRTLPAwb+ only: minimum number of modules from which label propagation is restarted. Default: 4, as in Beckett (2016) and the R package bipartite. |
 | `--reps N` | DIRTLPAwb+ only: number of LPAwb+ restarts per module number, run in parallel. Default: 10, as in Beckett (2016) and bipartite. |
 | `-p, --plotmod` | Write two files to the output directory: (1) an SVG interaction matrix sorted by module membership, and (2) a TSV of module assignments with columns `module`, `parasite`, `host`. |

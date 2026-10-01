@@ -12,7 +12,10 @@ use crate::MARGIN_LR;
 use calm_io::*;
 use itertools::Itertools;
 use ndarray::{Array2, ArrayBase, Axis, Dim, OwnedRepr};
+use crate::null::{null_matrix, NullModel, NullModelError};
+use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
+use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -142,16 +145,48 @@ pub struct InteractionMatrixStats {
 /// Result of a permutation significance test on a network metric.
 #[derive(Debug, Clone)]
 pub struct PermutationTestResult {
+    /// Null model used.
+    pub null_model: NullModel,
     /// Observed value of the metric.
     pub observed: f64,
     /// Mean of the null distribution.
     pub mean_null: f64,
-    /// Standard deviation of the null distribution.
+    /// Standard deviation of the null distribution (sample SD, n - 1).
     pub sd_null: f64,
-    /// P-value: proportion of null values >= observed.
+    /// Standardised effect size: (observed - mean_null) / sd_null.
+    pub z: f64,
+    /// One-tailed P-value, (k + 1) / (n + 1), where k is the number of null values >= observed.
     pub p_value: f64,
     /// Number of valid (non-NaN) permutations used.
     pub n_permutations: usize,
+}
+
+/// Species-level d' with its null distribution.
+#[derive(Debug, Clone)]
+pub struct DPrimeNullResult {
+    /// Species name.
+    pub species: String,
+    /// Observed d'.
+    pub observed: Option<f64>,
+    /// Mean of null d' values.
+    pub mean_null: f64,
+    /// 2.5% quantile of null d' values.
+    pub lower_null: f64,
+    /// 97.5% quantile of null d' values.
+    pub upper_null: f64,
+    /// One-tailed P-value, (k + 1) / (n + 1).
+    pub p_value: f64,
+}
+
+/// Quantile with linear interpolation (R's default, type 7). `sorted` must be ascending.
+fn quantile7(sorted: &[f64], q: f64) -> f64 {
+    if sorted.is_empty() {
+        return f64::NAN;
+    }
+    let h = (sorted.len() - 1) as f64 * q;
+    let lo = h.floor() as usize;
+    let hi = h.ceil() as usize;
+    sorted[lo] + (h - lo as f64) * (sorted[hi] - sorted[lo])
 }
 
 impl InteractionMatrix {
@@ -294,7 +329,11 @@ impl InteractionMatrix {
     /// assert_eq!(int_matrix.inner[[0, 0]], 1.0);
     /// ```
     pub fn from_bipartite(graph: BipartiteGraph) -> Self {
-        let (parasites, hosts) = graph.get_parasite_host_from_graph();
+        let (mut parasites, mut hosts) = graph.get_parasite_host_from_graph();
+        // Graph node order depends on hash ordering when the edge list is read, so sort by
+        // name to make the matrix, and anything stochastic computed from it, reproducible.
+        parasites.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+        hosts.sort_by(|a, b| a.1.name.cmp(&b.1.name));
 
         // Early return if graph is empty
         if parasites.is_empty() || hosts.is_empty() {
@@ -1209,6 +1248,16 @@ impl InteractionMatrix {
         modularity::dirt_lpa_wb_plus(&self.inner, mini, reps)
     }
 
+    /// Run `DIRTLPAwb+` reproducibly from `seed`.
+    pub fn dirt_lpa_wb_plus_seeded(&self, mini: u32, reps: u32, seed: u64) -> LpaWbPlus {
+        modularity::dirt_lpa_wb_plus_seeded(&self.inner, mini, reps, seed)
+    }
+
+    /// Run `LPAwb+` reproducibly from `seed`.
+    pub fn lpa_wb_plus_seeded(&self, init_module_guess: Option<u32>, seed: u64) -> LpaWbPlus {
+        modularity::lpa_wb_plus_with_rng(&self.inner, init_module_guess, &mut StdRng::seed_from_u64(seed))
+    }
+
     /// Sum of all values in the matrix.
     ///
     /// Equivalent to counting edges if the matrix is unweighted.
@@ -1271,35 +1320,121 @@ impl InteractionMatrix {
         }
     }
 
-    /// Permutation significance test for NODF using the r00 null model.
-    ///
-    /// Shuffles matrix elements `n` times and computes NODF on each null matrix.
-    /// P-value is the proportion of null NODF values ≥ the observed NODF.
-    pub fn nodf_permutation_test(&self, n: usize) -> PermutationTestResult {
-        let observed = self.nodf(true, false, false).nodf;
-
-        let null_scores: Vec<f64> = (0..n)
-            .into_par_iter()
-            .map(|_| self.permute_null().nodf(true, false, false).nodf)
-            .filter(|v| !v.is_nan())
-            .collect();
-
-        permutation_stats(observed, &null_scores)
+    /// Generate one null matrix under `model` with the same row and column names.
+    pub fn null(&self, model: NullModel, trades: usize, rng: &mut impl Rng) -> Result<Self, NullModelError> {
+        Ok(InteractionMatrix {
+            inner: null_matrix(&self.inner, model, trades, rng)?,
+            rownames: self.rownames.clone(),
+            colnames: self.colnames.clone(),
+        })
     }
 
-    /// Permutation significance test for H2' using the r00 null model.
+    /// Null-model significance test for any network-level statistic.
     ///
-    /// P-value is the proportion of null H2' values ≥ the observed H2'.
-    pub fn h2_permutation_test(&self, n: usize) -> PermutationTestResult {
-        let observed = self.h2_prime();
+    /// Generates `n` null matrices in parallel under `model` (each from its own RNG seeded
+    /// from `seed` and its index, so results are reproducible for a given seed), computes
+    /// `stat` on each, and compares the observed value with the null distribution.
+    /// `trades` is used only by the curveball model.
+    pub fn null_test<F>(
+        &self,
+        n: usize,
+        model: NullModel,
+        trades: usize,
+        seed: Option<u64>,
+        stat: F,
+    ) -> Result<PermutationTestResult, NullModelError>
+    where
+        F: Fn(&InteractionMatrix) -> f64 + Sync,
+    {
+        self.null_test_seeded(n, model, trades, seed, |m, _| stat(m))
+    }
 
-        let null_scores: Vec<f64> = (0..n)
+    /// As [`InteractionMatrix::null_test`], for statistics that are themselves stochastic
+    /// (e.g. modularity). `stat` receives a seed: `seed` for the observed matrix, and a value
+    /// drawn from each null matrix's generator for the nulls.
+    pub fn null_test_seeded<F>(
+        &self,
+        n: usize,
+        model: NullModel,
+        trades: usize,
+        seed: Option<u64>,
+        stat: F,
+    ) -> Result<PermutationTestResult, NullModelError>
+    where
+        F: Fn(&InteractionMatrix, u64) -> f64 + Sync,
+    {
+        let base: u64 = seed.unwrap_or_else(|| rand::thread_rng().random());
+        let observed = stat(self, base);
+        let scores: Result<Vec<f64>, NullModelError> = (0..n)
             .into_par_iter()
-            .map(|_| self.permute_null().h2_prime())
-            .filter(|v| !v.is_nan())
+            .map(|i| {
+                let mut rng = StdRng::seed_from_u64(base.wrapping_add(i as u64 + 1));
+                let null = self.null(model, trades, &mut rng)?;
+                let stat_seed: u64 = rng.random();
+                Ok(stat(&null, stat_seed))
+            })
             .collect();
+        let scores: Vec<f64> = scores?.into_iter().filter(|v| !v.is_nan()).collect();
+        Ok(permutation_stats(model, observed, &scores))
+    }
 
-        permutation_stats(observed, &null_scores)
+    /// Null-model test of species-level d' for every species in `partition`.
+    pub fn dprime_null_test(
+        &self,
+        partition: Partition,
+        n: usize,
+        model: NullModel,
+        trades: usize,
+        seed: Option<u64>,
+    ) -> Result<Vec<DPrimeNullResult>, NullModelError> {
+        let observed = self.d_prime(partition, None);
+        let base: u64 = seed.unwrap_or_else(|| rand::thread_rng().random());
+        let nulls: Result<Vec<Vec<(String, Option<f64>)>>, NullModelError> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let mut rng = StdRng::seed_from_u64(base.wrapping_add(i as u64 + 1));
+                Ok(self.null(model, trades, &mut rng)?.d_prime(partition, None))
+            })
+            .collect();
+        let nulls = nulls?;
+        Ok(observed
+            .into_iter()
+            .enumerate()
+            .map(|(k, (species, obs))| {
+                let mut vals: Vec<f64> = nulls.iter().filter_map(|v| v[k].1).filter(|x| !x.is_nan()).collect();
+                vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let m = vals.len() as f64;
+                let mean_null = vals.iter().sum::<f64>() / m;
+                let p_value = match obs {
+                    Some(o) => (vals.iter().filter(|&&x| x >= o).count() as f64 + 1.0) / (m + 1.0),
+                    None => f64::NAN,
+                };
+                DPrimeNullResult {
+                    species,
+                    observed: obs,
+                    mean_null,
+                    lower_null: quantile7(&vals, 0.025),
+                    upper_null: quantile7(&vals, 0.975),
+                    p_value,
+                }
+            })
+            .collect())
+    }
+
+    /// Permutation test for binary NODF under the r00 null model.
+    /// Kept for backwards compatibility; prefer [`InteractionMatrix::null_test`] with
+    /// [`NullModel::Curveball`].
+    pub fn nodf_permutation_test(&self, n: usize) -> PermutationTestResult {
+        self.null_test(n, NullModel::R00, 0, None, |m| m.nodf(true, false, false).nodf)
+            .expect("r00 cannot fail")
+    }
+
+    /// Permutation test for H2' under the r00 null model.
+    /// Kept for backwards compatibility; prefer [`InteractionMatrix::null_test`] with
+    /// [`NullModel::Patefield`].
+    pub fn h2_permutation_test(&self, n: usize) -> PermutationTestResult {
+        self.null_test(n, NullModel::R00, 0, None, |m| m.h2_prime())
+            .expect("r00 cannot fail")
     }
 
     /// Compute Barber's matrix (modularity-related).
@@ -1310,21 +1445,19 @@ impl InteractionMatrix {
     }
 }
 
-fn permutation_stats(observed: f64, null_scores: &[f64]) -> PermutationTestResult {
+fn permutation_stats(null_model: NullModel, observed: f64, null_scores: &[f64]) -> PermutationTestResult {
     let n = null_scores.len() as f64;
     let mean_null = null_scores.iter().sum::<f64>() / n;
-    let variance = null_scores
-        .iter()
-        .map(|x| (x - mean_null).powi(2))
-        .sum::<f64>()
-        / n;
+    let variance = null_scores.iter().map(|x| (x - mean_null).powi(2)).sum::<f64>() / (n - 1.0);
     let sd_null = variance.sqrt();
-    let p_value = null_scores.iter().filter(|&&x| x >= observed).count() as f64 / n;
+    let k = null_scores.iter().filter(|&&x| x >= observed).count() as f64;
     PermutationTestResult {
+        null_model,
         observed,
         mean_null,
         sd_null,
-        p_value,
+        z: (observed - mean_null) / sd_null,
+        p_value: (k + 1.0) / (n + 1.0),
         n_permutations: null_scores.len(),
     }
 }

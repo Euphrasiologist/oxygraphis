@@ -29,7 +29,8 @@ use crate::{sort::*, InteractionMatrix};
 use std::collections::{BTreeMap, HashSet};
 
 use ndarray::{Array, Array1, Array2, Axis};
-use rand::{seq::IndexedRandom, Rng};
+use rand::rngs::StdRng;
+use rand::{seq::IndexedRandom, Rng, SeedableRng};
 use rayon::prelude::*;
 
 /// Holds the result of the modularity computation (LPAwb+ algorithm).
@@ -249,7 +250,7 @@ fn weighted_modularity2(
     trace(&intermediate) / mat_sum
 }
 
-fn local_maximisation(
+fn local_maximisation<R: Rng + ?Sized>(
     matrix: &Array2<f64>,
     row_marginals: &Array1<f64>,
     col_marginals: &Array1<f64>,
@@ -259,6 +260,7 @@ fn local_maximisation(
     blue_labels: &mut Vec<Option<u32>>,
     total_red_degrees: &mut Vec<Option<f64>>,
     total_blue_degrees: &mut Vec<Option<f64>>,
+    rng: &mut R,
 ) -> (Vec<Option<u32>>, Vec<Option<u32>>, f64) {
     let mut qb_after = weighted_modularity2(b_matrix, mat_sum, red_labels, blue_labels);
     if qb_after.is_nan() {
@@ -312,7 +314,7 @@ fn local_maximisation(
                 .filter(|(i, _)| change_blue_label_test[*i] == Some(max_val))
                 .map(|(_, &val)| val)
                 .collect();
-            *blue_label = Some(*best_labels.choose(&mut rand::thread_rng()).unwrap());
+            *blue_label = Some(*best_labels.choose(rng).unwrap());
 
             // print blue labels during iteration, getting around immutable borrow
 
@@ -371,7 +373,7 @@ fn local_maximisation(
                 .filter(|(i, _)| change_red_label_test[*i] == Some(max_val))
                 .map(|(_, &val)| val)
                 .collect();
-            *red_label = Some(*best_labels.choose(&mut rand::thread_rng()).unwrap());
+            *red_label = Some(*best_labels.choose(rng).unwrap());
 
             if let Some(red_label_val) = red_label {
                 if *red_label_val as usize >= total_red_degrees.len() {
@@ -401,7 +403,7 @@ fn local_maximisation(
     (red_labels.clone(), blue_labels.clone(), qb_after)
 }
 
-fn stage_one_lpa_wb_dash(
+fn stage_one_lpa_wb_dash<R: Rng + ?Sized>(
     row_marginals: &Array1<f64>,
     col_marginals: &Array1<f64>,
     matrix: &Array2<f64>,
@@ -409,6 +411,7 @@ fn stage_one_lpa_wb_dash(
     mat_sum: f64,
     red_labels: &mut Vec<Option<u32>>,
     blue_labels: &mut Vec<Option<u32>>,
+    rng: &mut R,
 ) -> (Vec<Option<u32>>, Vec<Option<u32>>, f64) {
     let blue_label_length = blue_labels.len();
     let red_label_length = red_labels.len();
@@ -461,12 +464,13 @@ fn stage_one_lpa_wb_dash(
         blue_labels,
         &mut total_red_degrees,
         &mut total_blue_degrees,
-    );
+    rng,
+        );
 
     (updated_red_labels, updated_blue_labels, qb_now)
 }
 
-fn stage_two_lpa_wb_dash(
+fn stage_two_lpa_wb_dash<R: Rng + ?Sized>(
     row_marginals: &Array1<f64>,
     col_marginals: &Array1<f64>,
     matrix: &Array2<f64>,
@@ -475,6 +479,7 @@ fn stage_two_lpa_wb_dash(
     mut red_labels: Vec<Option<u32>>,
     mut blue_labels: Vec<Option<u32>>,
     mut qb_now: f64,
+    rng: &mut R,
 ) -> (Vec<Option<u32>>, Vec<Option<u32>>, f64) {
     let mut divisions_found: Vec<u32> = division(&red_labels, &blue_labels).into_iter().collect();
     let mut num_div = divisions_found.len();
@@ -581,6 +586,7 @@ fn stage_two_lpa_wb_dash(
             mat_sum,
             &mut red_labels,
             &mut blue_labels,
+        rng,
         );
 
         red_labels = new_red_labels;
@@ -620,6 +626,15 @@ fn stage_two_lpa_wb_dash(
 /// println!("Modularity: {}", result.modularity);
 /// ```
 pub fn lpa_wb_plus(input_matrix: &Array2<f64>, initial_module_guess: Option<u32>) -> LpaWbPlus {
+    lpa_wb_plus_with_rng(input_matrix, initial_module_guess, &mut rand::thread_rng())
+}
+
+/// As [`lpa_wb_plus`], drawing all random numbers from `rng` so results can be reproduced.
+pub fn lpa_wb_plus_with_rng<R: Rng + ?Sized>(
+    input_matrix: &Array2<f64>,
+    initial_module_guess: Option<u32>,
+    rng: &mut R,
+) -> LpaWbPlus {
     let mut matrix = input_matrix.clone();
     let mut flipped = false;
 
@@ -641,7 +656,6 @@ pub fn lpa_wb_plus(input_matrix: &Array2<f64>, initial_module_guess: Option<u32>
         (0..matrix.nrows()).map(|x| Some(x as u32)).collect()
     } else {
         // Sample randomly from 1 to (initial_module_guess + 1)
-        let mut rng = rand::thread_rng();
         let max_label = initial_module_guess.unwrap() + 1;
         (0..matrix.nrows())
             .map(|_| Some(rng.gen_range(1..=max_label)))
@@ -657,7 +671,8 @@ pub fn lpa_wb_plus(input_matrix: &Array2<f64>, initial_module_guess: Option<u32>
         mat_sum,
         &mut red_labels,
         &mut blue_labels,
-    );
+    rng,
+        );
 
     // Run Phase 2
     let (mut red_labels, mut blue_labels, qb_now) = stage_two_lpa_wb_dash(
@@ -669,7 +684,8 @@ pub fn lpa_wb_plus(input_matrix: &Array2<f64>, initial_module_guess: Option<u32>
         red_labels,
         blue_labels,
         qb_now,
-    );
+    rng,
+        );
 
     // Swap labels back if we flipped the matrix
     if flipped {
@@ -708,11 +724,17 @@ pub fn lpa_wb_plus(input_matrix: &Array2<f64>, initial_module_guess: Option<u32>
 /// println!("Best modularity found: {}", result.modularity);
 /// ```
 pub fn dirt_lpa_wb_plus(matrix: &Array2<f64>, mini: u32, reps: u32) -> LpaWbPlus {
+    dirt_lpa_wb_plus_seeded(matrix, mini, reps, rand::thread_rng().random())
+}
+
+/// As [`dirt_lpa_wb_plus`], but reproducible: the initial run and every restart use their own
+/// generator derived from `seed`, so results do not depend on thread scheduling.
+pub fn dirt_lpa_wb_plus_seeded(matrix: &Array2<f64>, mini: u32, reps: u32, seed: u64) -> LpaWbPlus {
     let LpaWbPlus {
         row_labels,
         column_labels,
         modularity,
-    } = lpa_wb_plus(matrix, None);
+    } = lpa_wb_plus_with_rng(matrix, None, &mut StdRng::seed_from_u64(seed));
     let mut best_row_labels = row_labels.clone();
     let mut best_column_labels = column_labels.clone();
     let mut best_modularity = modularity.clone();
@@ -725,7 +747,10 @@ pub fn dirt_lpa_wb_plus(matrix: &Array2<f64>, mini: u32, reps: u32) -> LpaWbPlus
             // Parallelize over reps
             let results: Vec<LpaWbPlus> = (0..reps)
                 .into_par_iter()
-                .map(|_| lpa_wb_plus(matrix, Some(aa)))
+                .map(|rep| {
+                    let sub = seed.wrapping_add(((aa as u64) << 32) | (rep as u64 + 1));
+                    lpa_wb_plus_with_rng(matrix, Some(aa), &mut StdRng::seed_from_u64(sub))
+                })
                 .collect();
 
             // Find the best result from parallel reps
@@ -871,6 +896,7 @@ mod tests {
 
     #[test]
     fn test_local_maximisation() {
+        let mut rng = StdRng::seed_from_u64(42);
         let matrix = array![
             [673.0, 0.0, 110.0, 0.0, 0.0],
             [0.0, 154.0, 0.0, 0.0, 5.0],
@@ -905,6 +931,7 @@ mod tests {
             &mut blue_labels,
             &mut total_red_degrees,
             &mut total_blue_degrees,
+        &mut rng,
         );
 
         // Only the modularity score is deterministic; label assignments are stochastic.
@@ -919,6 +946,7 @@ mod tests {
 
     #[test]
     fn test_stage_one_lpa_wb_dash() {
+        let mut rng = StdRng::seed_from_u64(42);
         let matrix = array![
             [673.0, 0.0, 110.0, 0.0, 0.0],
             [0.0, 154.0, 0.0, 0.0, 5.0],
@@ -943,6 +971,7 @@ mod tests {
             mat_sum,
             &mut red_labels,
             &mut blue_labels,
+        &mut rng,
         );
 
         // Expected output should be based on your LOCALMAXIMISATION logic
@@ -957,6 +986,7 @@ mod tests {
 
     #[test]
     fn test_stage_two_lpa_wb_dash() {
+        let mut rng = StdRng::seed_from_u64(42);
         let matrix = array![
             [673.0, 0.0, 110.0, 0.0, 0.0],
             [0.0, 154.0, 0.0, 0.0, 5.0],
@@ -982,6 +1012,7 @@ mod tests {
             mat_sum,
             &mut red_labels,
             &mut blue_labels,
+        &mut rng,
         );
 
         // Now run stage two with output from stage one
@@ -994,6 +1025,7 @@ mod tests {
             red_labels_stage1,
             blue_labels_stage1,
             qb_now_stage1,
+        &mut rng,
         );
 
         eprintln!("result_red_labels: {:?}", result_red_labels);
